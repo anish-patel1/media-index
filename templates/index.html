@@ -3,10 +3,173 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Media URL Analyzer</title>
+    <title>Media URL Analyzer — Visual Directory & Duplicate Tracker</title>
+    <meta name="description" content="Parse media URLs, visualize their storage directory patterns in an interactive tree, and track duplicate submissions.">
+    <!-- Google Fonts Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Main Stylesheet -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <h1>Media URL Analyzer - Setup Test</h1>
-    <p>Flask environment is running successfully.</p>
+    <div class="app-container">
+        <!-- Header & Branding -->
+        <header class="header-section">
+            <div class="brand-wrapper">
+                <div class="brand-title-group">
+                    <div class="brand-logo-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                            <line x1="12" y1="11" x2="12" y2="17"></line>
+                            <line x1="9" y1="14" x2="15" y2="14"></line>
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 class="app-title">Media URL Analyzer</h1>
+                        <p class="brand-subtitle">Extract storage directory hierarchies and track duplicate submissions</p>
+                    </div>
+                </div>
+
+                <button id="reset-db-btn" class="btn btn-danger" title="Clear all stored URLs">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                    <span>Reset Data</span>
+                </button>
+            </div>
+
+            <!-- Stats Ribbon -->
+            <section class="stats-ribbon" aria-label="Usage Statistics">
+                <div class="stat-card">
+                    <div class="stat-icon blue" aria-hidden="true">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                        </svg>
+                    </div>
+                    <div class="stat-info">
+                        <div id="stat-unique-urls" class="stat-value">0</div>
+                        <div class="stat-label">Unique URLs</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon green" aria-hidden="true">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                    </div>
+                    <div class="stat-info">
+                        <div id="stat-total-submissions" class="stat-value">0</div>
+                        <div class="stat-label">Total Pastes</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon amber" aria-hidden="true">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                    </div>
+                    <div class="stat-info">
+                        <div id="stat-duplicates" class="stat-value">0</div>
+                        <div class="stat-label">Duplicates Caught</div>
+                    </div>
+                </div>
+            </section>
+        </header>
+
+        <!-- Main Content Area -->
+        <main>
+            <!-- URL Input Card -->
+            <section class="panel-card" aria-labelledby="input-heading">
+                <div class="input-section-header">
+                    <h2 id="input-heading" class="input-section-title">Analyze Media URL</h2>
+                </div>
+
+                <form id="url-form" onsubmit="return false;">
+                    <div class="input-form-wrapper">
+                        <div class="input-field-container">
+                            <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="2" y1="12" x2="22" y2="12"></line>
+                                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                            </svg>
+                            <input 
+                                type="url" 
+                                id="url-input" 
+                                class="url-input" 
+                                placeholder="Paste media URL here (e.g., https://example.com/assets/2026/photo.png)" 
+                                required
+                                autocomplete="off"
+                            >
+                        </div>
+
+                        <button type="button" id="paste-clipboard-btn" class="btn btn-secondary" title="Paste from clipboard">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                                <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                            </svg>
+                            <span>Paste</span>
+                        </button>
+
+                        <button type="submit" id="submit-url-btn" class="btn btn-primary">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            <span>Analyze URL</span>
+                        </button>
+                    </div>
+
+                    <!-- Notification Banner -->
+                    <div id="status-banner" class="notification-banner hidden" role="alert">
+                        <span id="status-message"></span>
+                    </div>
+
+                    <!-- Quick Sample URL Pills -->
+                    <div class="sample-pills-row">
+                        <span class="sample-label">Try sample:</span>
+                        <button type="button" class="sample-pill" data-url="https://images.unsplash.com/photo-nature/2026/forest-mountain.jpg">Unsplash Image</button>
+                        <button type="button" class="sample-pill" data-url="https://images.unsplash.com/photo-nature/2026/river-stream.jpg">Same Folder Image</button>
+                        <button type="button" class="sample-pill" data-url="https://cdn.pixabay.com/video/2026/04/aerial-drone.mp4">Pixabay Video</button>
+                        <button type="button" class="sample-pill" data-url="https://media.giphy.com/media/reaction/funny-cat.gif">Giphy GIF</button>
+                    </div>
+                </form>
+            </section>
+
+            <!-- Visual Folder Tree Section -->
+            <section class="panel-card" aria-labelledby="tree-heading">
+                <div class="tree-header">
+                    <div class="tree-title-group">
+                        <h2 id="tree-heading" class="tree-title">Storage Pattern Hierarchy</h2>
+                    </div>
+
+                    <div class="tree-actions">
+                        <button id="expand-all-btn" class="action-btn-sm" title="Expand all folders">Expand All</button>
+                        <button id="collapse-all-btn" class="action-btn-sm" title="Collapse all folders">Collapse All</button>
+                    </div>
+                </div>
+
+                <!-- Tree View Display Container -->
+                <div id="tree-container" class="tree-container" aria-live="polite">
+                    <!-- Populated dynamically via app.js -->
+                    <div class="empty-tree-state">
+                        <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                        <h3 class="empty-state-title">No URLs Analyzed Yet</h3>
+                        <p class="empty-state-text">Paste a media URL above or click one of the quick samples to visualize its domain and storage directory path.</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Application Script -->
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>
