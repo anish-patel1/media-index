@@ -104,6 +104,76 @@ class TestURLDatabase(unittest.TestCase):
         self.assertEqual(res["status"], "cleared")
         self.assertEqual(self.db.get_tree()["stats"]["total_urls"], 0)
 
+    def test_multi_user_isolation(self):
+        user_a = "user_alpha"
+        user_b = "user_beta"
+
+        self.db.add_or_increment_url("https://alpha.com/img1.jpg", user_id=user_a)
+        self.db.add_or_increment_url("https://alpha.com/img2.jpg", user_id=user_a)
+        self.db.add_or_increment_url("https://beta.com/video.mp4", user_id=user_b)
+
+        tree_a = self.db.get_tree(user_id=user_a)
+        tree_b = self.db.get_tree(user_id=user_b)
+
+        self.assertEqual(tree_a["stats"]["total_urls"], 2)
+        self.assertEqual(tree_b["stats"]["total_urls"], 1)
+        self.assertEqual(tree_a["tree"][0]["name"], "alpha.com")
+        self.assertEqual(tree_b["tree"][0]["name"], "beta.com")
+
+        # Clearing user A does not affect user B
+        self.db.clear(user_id=user_a)
+        self.assertEqual(self.db.get_tree(user_id=user_a)["stats"]["total_urls"], 0)
+        self.assertEqual(self.db.get_tree(user_id=user_b)["stats"]["total_urls"], 1)
+
+    def test_legacy_format_auto_migration(self):
+        # Create a database file with legacy format {"urls": {...}}
+        legacy_path = os.path.join(self.test_dir, "legacy.json")
+        legacy_data = {
+            "urls": {
+                "https://legacy.com/pic.jpg": {
+                    "url": "https://legacy.com/pic.jpg",
+                    "domain": "legacy.com",
+                    "path_segments": [],
+                    "filename": "pic.jpg",
+                    "extension": "jpg",
+                    "count": 3,
+                    "first_added": "2026-01-01T00:00:00Z",
+                    "last_updated": "2026-01-01T00:00:00Z"
+                }
+            }
+        }
+        with open(legacy_path, "w", encoding="utf-8") as f:
+            import json
+            json.dump(legacy_data, f)
+
+        migrated_db = URLDatabase(legacy_path)
+        tree = migrated_db.get_tree()
+        self.assertEqual(tree["stats"]["total_urls"], 1)
+        self.assertEqual(tree["stats"]["total_submissions"], 3)
+
+    def test_export_and_import_data(self):
+        user_1 = "user_exp_1"
+        user_2 = "user_imp_2"
+
+        self.db.add_or_increment_url("https://site.com/gallery/photo1.jpg", user_id=user_1)
+        self.db.add_or_increment_url("https://site.com/gallery/photo1.jpg", user_id=user_1)  # count 2
+        self.db.add_or_increment_url("https://site.com/gallery/photo2.png", user_id=user_1)
+
+        # Export user 1 data
+        exported = self.db.export_data(user_id=user_1)
+        self.assertEqual(exported["version"], "2.0")
+        self.assertEqual(exported["total_urls"], 2)
+
+        # Import into user 2
+        res = self.db.import_data(exported, user_id=user_2)
+        self.assertEqual(res["status"], "success")
+        self.assertEqual(res["imported"], 2)
+
+        tree_2 = self.db.get_tree(user_id=user_2)
+        self.assertEqual(tree_2["stats"]["total_urls"], 2)
+        self.assertEqual(tree_2["stats"]["total_submissions"], 3)
+
 
 if __name__ == "__main__":
     unittest.main()
+

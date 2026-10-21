@@ -1,5 +1,8 @@
+import io
+import json
 import os
-from flask import Flask, render_template, request, jsonify
+from datetime import datetime, timezone
+from flask import Flask, render_template, request, jsonify, Response, send_file
 from database import URLDatabase
 
 # Initialize Flask app
@@ -10,6 +13,31 @@ DB_PATH = os.environ.get("URL_DB_PATH", "url_database.json")
 db = URLDatabase(DB_PATH)
 
 
+def get_user_id() -> str:
+    """Extracts user identification from header, query parameter, or JSON body.
+    Defaults to 'default' for non-namespaced backward compatibility.
+    """
+    # 1. Header (standard frontend flow)
+    header_val = request.headers.get("X-User-Id")
+    if header_val and header_val.strip():
+        return header_val.strip()
+
+    # 2. Query param
+    query_val = request.args.get("user_id")
+    if query_val and query_val.strip():
+        return query_val.strip()
+
+    # 3. JSON body
+    if request.is_json:
+        payload = request.get_json(silent=True)
+        if isinstance(payload, dict) and payload.get("user_id"):
+            val = str(payload.get("user_id")).strip()
+            if val:
+                return val
+
+    return "default"
+
+
 @app.route("/")
 def index():
     """Renders the main web interface."""
@@ -18,8 +46,7 @@ def index():
 
 @app.route("/api/urls", methods=["POST"])
 def add_url():
-    """Receives a URL, parses it, updates the database,
-
+    """Receives a URL, parses it, updates the user's database,
     and returns entry details including duplicate status.
     """
     if not request.is_json:
@@ -42,8 +69,10 @@ def add_url():
             "message": "URL must be a non-empty string."
         }), 400
 
+    user_id = get_user_id()
+
     try:
-        result = db.add_or_increment_url(raw_url)
+        result = db.add_or_increment_url(raw_url, user_id=user_id)
         status_code = 200 if result.get("is_duplicate") else 201
         return jsonify(result), status_code
     except ValueError as e:
@@ -60,9 +89,10 @@ def add_url():
 
 @app.route("/api/tree", methods=["GET"])
 def get_tree():
-    """Returns the visual folder tree hierarchy and aggregate statistics."""
+    """Returns the visual folder tree hierarchy and aggregate statistics for the current user."""
+    user_id = get_user_id()
     try:
-        tree_data = db.get_tree()
+        tree_data = db.get_tree(user_id=user_id)
         return jsonify({
             "status": "success",
             "tree": tree_data.get("tree", []),
@@ -77,9 +107,10 @@ def get_tree():
 
 @app.route("/api/clear", methods=["POST"])
 def clear_database():
-    """Resets the stored URLs in the database."""
+    """Resets the stored URLs in the database for the current user."""
+    user_id = get_user_id()
     try:
-        result = db.clear()
+        result = db.clear(user_id=user_id)
         return jsonify(result), 200
     except Exception as e:
         return jsonify({
@@ -88,5 +119,75 @@ def clear_database():
         }), 500
 
 
+@app.route("/api/export", methods=["GET"])
+def export_data():
+    """Exports the caller's stored URL database as a downloadable JSON file.
+    Follows standard filename pattern: mua_export_<YYYY-MM-DD>_<HHMMSS>.json
+    """
+    user_id = get_user_id()
+    try:
+        data = db.export_data(user_id=user_id)
+        now_dt = datetime.now()
+        timestamp_str = now_dt.strftime("%Y-%m-%d_%H%M%S")
+        filename = f"mua_export_{timestamp_str}.json"
+
+        json_bytes = json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
+        return send_file(
+            io.BytesIO(json_bytes),
+            mimetype="application/json",
+            as_attachment=True,
+            download_name=filename
+        )
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to export data: {str(e)}"
+        }), 500
+
+
+@app.route("/api/import", methods=["POST"])
+def import_data():
+    """Imports URLs into the caller's database from an uploaded JSON file or body."""
+    user_id = get_user_id()
+    try:
+        import_payload = None
+        if "file" in request.files:
+            uploaded_file = request.files["file"]
+            if not uploaded_file.filename:
+                return jsonify({
+                    "status": "error",
+                    "message": "No file selected for upload."
+                }), 400
+            file_content = uploaded_file.read().decode("utf-8")
+            import_payload = json.loads(file_content)
+        elif request.is_json:
+            import_payload = request.get_json(silent=True)
+
+        if not import_payload:
+            return jsonify({
+                "status": "error",
+                "message": "No JSON data provided. Please upload a JSON file or post JSON content."
+            }), 400
+
+        result = db.import_data(import_payload, user_id=user_id)
+        return jsonify(result), 200
+    except json.JSONDecodeError:
+        return jsonify({
+            "status": "error",
+            "message": "Invalid JSON format in uploaded file."
+        }), 400
+    except ValueError as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 400
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to import data: {str(e)}"
+        }), 500
+
+
 if __name__ == "__main__":
     app.run(debug=True, host="127.0.0.1", port=5000)
+

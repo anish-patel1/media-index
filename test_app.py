@@ -94,6 +94,60 @@ class TestAppRoutes(unittest.TestCase):
         tree_res = self.client.get("/api/tree")
         self.assertEqual(tree_res.get_json()["stats"]["total_urls"], 0)
 
+    def test_user_id_header_isolation(self):
+        headers_a = {"X-User-Id": "client_session_a"}
+        headers_b = {"X-User-Id": "client_session_b"}
+
+        self.client.post("/api/urls", json={"url": "https://a.com/a.jpg"}, headers=headers_a)
+        self.client.post("/api/urls", json={"url": "https://b.com/b.jpg"}, headers=headers_b)
+
+        res_a = self.client.get("/api/tree", headers=headers_a)
+        res_b = self.client.get("/api/tree", headers=headers_b)
+
+        self.assertEqual(res_a.get_json()["stats"]["total_urls"], 1)
+        self.assertEqual(res_a.get_json()["tree"][0]["name"], "a.com")
+        self.assertEqual(res_b.get_json()["stats"]["total_urls"], 1)
+        self.assertEqual(res_b.get_json()["tree"][0]["name"], "b.com")
+
+    def test_export_endpoint(self):
+        headers = {"X-User-Id": "export_client"}
+        self.client.post("/api/urls", json={"url": "https://export.com/pic.png"}, headers=headers)
+
+        export_res = self.client.get("/api/export", headers=headers)
+        self.assertEqual(export_res.status_code, 200)
+        self.assertEqual(export_res.mimetype, "application/json")
+        self.assertIn("attachment; filename=mua_export_", export_res.headers.get("Content-Disposition", ""))
+
+        data = json.loads(export_res.data)
+        self.assertEqual(data["version"], "2.0")
+        self.assertEqual(data["total_urls"], 1)
+
+    def test_import_endpoint(self):
+        headers = {"X-User-Id": "import_client"}
+        import_payload = {
+            "version": "2.0",
+            "urls": {
+                "https://importsite.com/media/clip.mp4": {
+                    "url": "https://importsite.com/media/clip.mp4",
+                    "domain": "importsite.com",
+                    "path_segments": ["media"],
+                    "filename": "clip.mp4",
+                    "extension": "mp4",
+                    "count": 5
+                }
+            }
+        }
+        import_res = self.client.post("/api/import", json=import_payload, headers=headers)
+        self.assertEqual(import_res.status_code, 200)
+        res_data = import_res.get_json()
+        self.assertEqual(res_data["status"], "success")
+        self.assertEqual(res_data["imported"], 1)
+
+        tree_res = self.client.get("/api/tree", headers=headers)
+        self.assertEqual(tree_res.get_json()["stats"]["total_urls"], 1)
+        self.assertEqual(tree_res.get_json()["stats"]["total_submissions"], 5)
+
 
 if __name__ == "__main__":
     unittest.main()
+
