@@ -1,16 +1,22 @@
 /**
- * Media URL Analyzer - Modern & Enhanced Client Application
- * - Silent user-scoping via localStorage and X-User-Id (no ID exposed to user)
- * - Enhanced search with match highlighting, live counter, and auto-expansion
- * - Category filter pills (Images, Videos, GIFs, Duplicates Only)
- * - Interactive media distribution widget
- * - Floating toast notifications and soft pulse without forced scrolling
- * - ASCII tree copier and clipboard tools
+ * Media Library — Modern Client Application
+ * Matches prototype UI: https://mediaurl-ngejbjg9.manus.space/
+ * 
+ * Features:
+ * - Silent user-scoping via localStorage and X-User-Id header
+ * - Structured Tree-Table rendering with details/summary and column alignment
+ * - Dynamic domain badges, folder paths, and file type chips (JPG, WEBP, GIF, MP4, etc.)
+ * - Duplicate repeat count pills (↻ N)
+ * - Live search with branch auto-expansion and match highlighting
+ * - Expand all / Collapse all / Copy ASCII tree diagram
+ * - Backup JSON export and merge import
+ * - Reset database with confirmation modal
+ * - Top-right floating animated toasts
  */
 
 document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------
-    // 1. Silent User Identity Management (No UI exposure)
+    // 1. Silent User Identity Management
     // -------------------------------------------------------------
     function getOrCreateUserId() {
         const STORAGE_KEY = 'mua_user_id';
@@ -39,58 +45,47 @@ document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------
     const urlForm = document.getElementById('url-form');
     const urlInput = document.getElementById('url-input');
-    const clearInputBtn = document.getElementById('clear-input-btn');
+    const clearUrlBtn = document.getElementById('clear-url-btn');
     const submitBtn = document.getElementById('submit-url-btn');
     const pasteBtn = document.getElementById('paste-clipboard-btn');
-    const resetBtn = document.getElementById('reset-db-btn');
+    const captureStatus = document.getElementById('capture-status');
+
+    // Header & Stats
+    const statTotalMedia = document.getElementById('stat-total-media');
+    const statSources = document.getElementById('stat-sources');
+    const statRepeats = document.getElementById('stat-repeats');
+    const treeCountBadge = document.getElementById('tree-count-badge');
+    const footerCount = document.getElementById('footer-count');
 
     // Export & Import
     const exportBtn = document.getElementById('export-btn');
-    const sidebarExportBtn = document.getElementById('sidebar-export-btn');
     const importBtn = document.getElementById('import-btn');
-    const sidebarImportBtn = document.getElementById('sidebar-import-btn');
     const importFileInput = document.getElementById('import-file-input');
+
+    // Reset Modal
+    const resetDbBtn = document.getElementById('reset-db-btn');
+    const resetModal = document.getElementById('reset-modal');
+    const cancelResetBtn = document.getElementById('cancel-reset-btn');
+    const confirmResetBtn = document.getElementById('confirm-reset-btn');
 
     // Tree & Search Toolbar
     const treeContainer = document.getElementById('tree-container');
     const treeSearchInput = document.getElementById('tree-search-input');
     const clearSearchBtn = document.getElementById('clear-search-btn');
-    const searchMatchCount = document.getElementById('search-match-count');
     const expandAllBtn = document.getElementById('expand-all-btn');
     const collapseAllBtn = document.getElementById('collapse-all-btn');
     const copyTreeTextBtn = document.getElementById('copy-tree-text-btn');
-    const treeItemCount = document.getElementById('tree-item-count');
-    const filterPills = document.querySelectorAll('.filter-pill');
-    const filterDupCount = document.getElementById('filter-dup-count');
-
-    // Stats Elements
-    const statUnique = document.getElementById('stat-unique-urls');
-    const statTotal = document.getElementById('stat-total-submissions');
-    const statDuplicates = document.getElementById('stat-duplicates');
-
-    // Media Breakdown Widget
-    const distTotalCount = document.getElementById('dist-total-count');
-    const progImage = document.getElementById('prog-image');
-    const progVideo = document.getElementById('prog-video');
-    const progGif = document.getElementById('prog-gif');
-    const progOther = document.getElementById('prog-other');
-    const countImages = document.getElementById('count-images');
-    const countVideos = document.getElementById('count-videos');
-    const countGifs = document.getElementById('count-gifs');
-    const countOther = document.getElementById('count-other');
-    const legendItems = document.querySelectorAll('.legend-item');
 
     // Toast Container
     const toastContainer = document.getElementById('toast-container');
 
     // State Variables
     let rawTreeData = [];
-    let currentFilterType = 'all'; // 'all' | 'image' | 'video' | 'gif' | 'duplicates'
     let currentSearchQuery = '';
     let lastUpdatedUrl = null;
 
     // -------------------------------------------------------------
-    // 3. Floating Toast Notification System
+    // 3. Floating Toast Notifications
     // -------------------------------------------------------------
     const TOAST_ICONS = {
         success: `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>`,
@@ -144,194 +139,64 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // -------------------------------------------------------------
-    // 4. Data Loading & Aggregate Calculations
+    // 4. Time Formatting & Truncation Helpers
     // -------------------------------------------------------------
-    async function loadTreeData() {
+    function formatTimeAgo(isoString) {
+        if (!isoString) return 'recently';
+        const date = new Date(isoString);
+        if (isNaN(date.getTime())) return 'recently';
+
+        const now = new Date();
+        const diffMs = now - date;
+        const diffSecs = Math.floor(diffMs / 1000);
+        const diffMins = Math.floor(diffSecs / 60);
+        const diffHours = Math.floor(diffMins / 60);
+        const diffDays = Math.floor(diffHours / 24);
+
+        if (diffSecs < 60) return 'just now';
+        if (diffMins < 60) return `${diffMins} min ago`;
+        if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+        if (diffDays === 1) return 'Yesterday';
+        if (diffDays < 7) return `${diffDays} days ago`;
+
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }
+
+    function truncateUrl(url) {
+        if (!url) return '';
         try {
-            const response = await authFetch('/api/tree');
-            if (!response.ok) throw new Error('Failed to load tree data');
-
-            const result = await response.json();
-            if (result.status === 'success') {
-                rawTreeData = result.tree || [];
-                updateStats(result.stats);
-                updateMediaBreakdown();
-                applyFilterAndRender();
+            const parsed = new URL(url);
+            const path = parsed.pathname;
+            if (path.length > 25) {
+                return '…' + path.slice(-22);
             }
-        } catch (error) {
-            console.error('Error loading tree:', error);
-            showToast('Connection Error', 'Could not fetch your tree data from the server.', 'error');
-        }
-    }
-
-    function updateStats(stats) {
-        if (!stats) return;
-        animateCounter(statUnique, stats.total_urls ?? 0);
-        animateCounter(statTotal, stats.total_submissions ?? 0);
-        animateCounter(statDuplicates, stats.duplicate_submissions ?? 0);
-
-        if (treeItemCount) {
-            const total = stats.total_urls ?? 0;
-            treeItemCount.textContent = `${total} ${total === 1 ? 'file' : 'files'}`;
-        }
-    }
-
-    function animateCounter(element, target) {
-        if (!element) return;
-        const current = parseInt(element.textContent.replace(/,/g, ''), 10) || 0;
-        if (current === target) return;
-
-        const diff = target - current;
-        const step = diff > 0 ? Math.ceil(diff / 10) : Math.floor(diff / 10);
-        const nextVal = current + step;
-
-        element.textContent = nextVal.toLocaleString();
-        if (nextVal !== target) {
-            setTimeout(() => animateCounter(element, target), 25);
-        } else {
-            element.textContent = target.toLocaleString();
+            return path;
+        } catch {
+            return url.length > 25 ? '…' + url.slice(-22) : url;
         }
     }
 
     // -------------------------------------------------------------
-    // 5. Media Breakdown Widget Calculation
+    // 5. Tree Rendering Engine
     // -------------------------------------------------------------
-    function classifyExtension(ext) {
-        const e = (ext || '').toLowerCase().trim();
-        if (e === 'gif') return 'gif';
-        if (['jpg', 'jpeg', 'png', 'webp', 'svg', 'bmp', 'avif', 'ico', 'tiff'].includes(e)) return 'image';
-        if (['mp4', 'webm', 'ogg', 'mov', 'mkv', 'm4v', 'avi', 'flv'].includes(e)) return 'video';
-        return 'other';
+    const SVG_ICONS = {
+        domainFolder: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg>`,
+        nestedFolder: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg>`,
+        image: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4" width="17" height="16" rx="2.5"/><circle cx="9" cy="9" r="1.6"/><path d="m20.5 15-5-5L5 20.5"/></svg>`,
+        video: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3V9Z"/></svg>`,
+        file: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>`
+    };
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     }
 
-    function updateMediaBreakdown() {
-        let imgCount = 0, vidCount = 0, gifCount = 0, otherCount = 0, dupCount = 0;
-
-        function traverse(node) {
-            if (node.type === 'file') {
-                const category = classifyExtension(node.extension);
-                if (category === 'image') imgCount++;
-                else if (category === 'video') vidCount++;
-                else if (category === 'gif') gifCount++;
-                else otherCount++;
-
-                if ((node.count || 1) > 1) {
-                    dupCount++;
-                }
-            } else if (node.children) {
-                node.children.forEach(traverse);
-            }
-        }
-
-        rawTreeData.forEach(traverse);
-        const total = imgCount + vidCount + gifCount + otherCount;
-
-        if (distTotalCount) distTotalCount.textContent = `${total} ${total === 1 ? 'file' : 'files'}`;
-        if (countImages) countImages.textContent = imgCount;
-        if (countVideos) countVideos.textContent = vidCount;
-        if (countGifs) countGifs.textContent = gifCount;
-        if (countOther) countOther.textContent = otherCount;
-        if (filterDupCount) filterDupCount.textContent = dupCount;
-
-        if (total > 0) {
-            progImage.style.width = `${(imgCount / total) * 100}%`;
-            progVideo.style.width = `${(vidCount / total) * 100}%`;
-            progGif.style.width = `${(gifCount / total) * 100}%`;
-            progOther.style.width = `${(otherCount / total) * 100}%`;
-        } else {
-            progImage.style.width = '0%';
-            progVideo.style.width = '0%';
-            progGif.style.width = '0%';
-            progOther.style.width = '0%';
-        }
-    }
-
-    // -------------------------------------------------------------
-    // 6. Enhanced Tree Filtering & Search Algorithm
-    // -------------------------------------------------------------
-    function filterNode(node, query, categoryFilter) {
-        if (node.type === 'file') {
-            const extCat = classifyExtension(node.extension);
-            const isDup = (node.count || 1) > 1;
-
-            // Check Category Filter
-            if (categoryFilter === 'image' && extCat !== 'image') return null;
-            if (categoryFilter === 'video' && extCat !== 'video') return null;
-            if (categoryFilter === 'gif' && extCat !== 'gif') return null;
-            if (categoryFilter === 'other' && extCat !== 'other') return null;
-            if (categoryFilter === 'duplicates' && !isDup) return null;
-
-            // Check Text Query
-            if (query) {
-                const nameMatches = node.name.toLowerCase().includes(query);
-                const urlMatches = (node.url || '').toLowerCase().includes(query);
-                const extMatches = (node.extension || '').toLowerCase().includes(query);
-                if (!nameMatches && !urlMatches && !extMatches) return null;
-            }
-
-            return { ...node };
-        }
-
-        // For Domain or Folder: filter children recursively
-        if (node.children && node.children.length > 0) {
-            const filteredChildren = [];
-            for (const child of node.children) {
-                const res = filterNode(child, query, categoryFilter);
-                if (res) filteredChildren.push(res);
-            }
-
-            // If children matched, keep this folder/domain
-            if (filteredChildren.length > 0) {
-                return {
-                    ...node,
-                    children: filteredChildren,
-                    autoExpanded: true
-                };
-            }
-
-            // Or if the folder itself matches query and no category filter restrictions
-            if (query && categoryFilter === 'all' && node.name.toLowerCase().includes(query)) {
-                return { ...node, children: [] };
-            }
-        }
-
-        return null;
-    }
-
-    function applyFilterAndRender() {
-        const query = currentSearchQuery.trim().toLowerCase();
-
-        let filteredTree = [];
-        let totalMatches = 0;
-
-        if (!query && currentFilterType === 'all') {
-            filteredTree = rawTreeData;
-            if (searchMatchCount) searchMatchCount.classList.add('hidden');
-        } else {
-            for (const domainNode of rawTreeData) {
-                const res = filterNode(domainNode, query, currentFilterType);
-                if (res) filteredTree.push(res);
-            }
-
-            // Count total matching file nodes
-            function countFiles(n) {
-                if (n.type === 'file') totalMatches++;
-                else if (n.children) n.children.forEach(countFiles);
-            }
-            filteredTree.forEach(countFiles);
-
-            if (searchMatchCount) {
-                searchMatchCount.classList.remove('hidden');
-                searchMatchCount.textContent = `${totalMatches} ${totalMatches === 1 ? 'match' : 'matches'}`;
-            }
-        }
-
-        renderTree(filteredTree, query);
-    }
-
-    // -------------------------------------------------------------
-    // 7. Tree Renderer with Substring Highlighting
-    // -------------------------------------------------------------
     function highlightText(text, query) {
         if (!query || !text) return escapeHtml(text);
         const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -339,584 +204,617 @@ document.addEventListener('DOMContentLoaded', () => {
         return escapeHtml(text).replace(regex, '<mark class="search-highlight">$1</mark>');
     }
 
-    function escapeHtml(str) {
-        return (str || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
-    }
+    function renderTree(treeData, searchQuery = '') {
+        if (!treeContainer) return;
 
-    function renderTree(tree, activeQuery = '') {
-        treeContainer.innerHTML = '';
-
-        if (!tree || tree.length === 0) {
-            if (activeQuery || currentFilterType !== 'all') {
-                treeContainer.innerHTML = `
-                    <div class="no-search-results">
-                        <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <circle cx="11" cy="11" r="8"></circle>
-                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                        </svg>
-                        <h3 class="empty-state-title">No Matching Results</h3>
-                        <p class="empty-state-text">No media found matching current filter or query "${escapeHtml(activeQuery)}".</p>
-                        <button type="button" id="reset-filter-btn" class="no-search-results-btn">Clear Search & Filters</button>
-                    </div>
-                `;
-                const resetFilterBtn = document.getElementById('reset-filter-btn');
-                if (resetFilterBtn) {
-                    resetFilterBtn.addEventListener('click', () => {
-                        treeSearchInput.value = '';
-                        currentSearchQuery = '';
-                        currentFilterType = 'all';
-                        clearSearchBtn.classList.add('hidden');
-                        filterPills.forEach(p => p.classList.toggle('active', p.getAttribute('data-type') === 'all'));
-                        applyFilterAndRender();
-                    });
-                }
-            } else {
-                treeContainer.innerHTML = `
-                    <div class="empty-tree-state">
-                        <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        if (!treeData || treeData.length === 0) {
+            treeContainer.innerHTML = `
+                <div class="empty-tree-state">
+                    <div class="empty-icon-wrap" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
                             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                            <line x1="12" y1="11" x2="12" y2="17"></line>
+                            <line x1="9" y1="14" x2="15" y2="14"></line>
                         </svg>
-                        <h3 class="empty-state-title">No URLs Analyzed Yet</h3>
-                        <p class="empty-state-text">Paste a media URL on the left panel to begin exploring its storage path hierarchy.</p>
                     </div>
-                `;
-            }
+                    <h3 class="empty-title">No Media URLs Analyzed Yet</h3>
+                    <p class="empty-desc">Paste any image, video, or GIF link into the box above to extract its directory structure.</p>
+                </div>
+            `;
             return;
         }
 
-        const rootList = document.createElement('ul');
-        rootList.className = 'tree-list';
+        const query = searchQuery.trim().toLowerCase();
+        let html = '';
 
-        tree.forEach(domainNode => {
-            const domainItem = buildNodeElement(domainNode, activeQuery);
-            rootList.appendChild(domainItem);
-        });
-
-        treeContainer.appendChild(rootList);
-
-        // Soft Highlight if lastUpdatedUrl is present
-        if (lastUpdatedUrl) {
-            const targetNode = document.querySelector(`[data-url="${CSS.escape(lastUpdatedUrl)}"]`);
-            if (targetNode) {
-                targetNode.classList.add('highlight-pulse');
-                setTimeout(() => targetNode.classList.remove('highlight-pulse'), 2500);
-            }
-        }
-    }
-
-    function buildNodeElement(node, activeQuery = '') {
-        const li = document.createElement('li');
-        li.className = `tree-node tree-node-${node.type}`;
-
-        const row = document.createElement('div');
-        row.className = `node-row ${node.type}-row`;
-
-        if (node.type === 'domain' || node.type === 'folder') {
-            // Chevron Toggle Icon
-            const chevronSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            chevronSvg.setAttribute('class', 'toggle-icon');
-            chevronSvg.setAttribute('viewBox', '0 0 24 24');
-            chevronSvg.setAttribute('fill', 'none');
-            chevronSvg.setAttribute('stroke-width', '2.5');
-            chevronSvg.setAttribute('stroke-linecap', 'round');
-            chevronSvg.setAttribute('stroke-linejoin', 'round');
-            chevronSvg.innerHTML = '<polyline points="6 9 12 15 18 9"></polyline>';
-            row.appendChild(chevronSvg);
-
-            // Icon
-            const iconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            iconSvg.setAttribute('class', `type-icon ${node.type}-icon`);
-            iconSvg.setAttribute('viewBox', '0 0 24 24');
-            iconSvg.setAttribute('fill', 'none');
-            iconSvg.setAttribute('stroke-width', '2');
-            iconSvg.setAttribute('stroke-linecap', 'round');
-            iconSvg.setAttribute('stroke-linejoin', 'round');
-
+        function renderNode(node) {
             if (node.type === 'domain') {
-                iconSvg.innerHTML = `
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="2" y1="12" x2="22" y2="12"></line>
-                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-                `;
-            } else {
-                iconSvg.innerHTML = `
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                `;
-            }
-            row.appendChild(iconSvg);
+                const color = node.domain_color || 'violet';
+                const domainType = node.domain_type || 'MEDIA SOURCE';
+                const itemsCount = node.items_count || 0;
+                const foldersCount = node.folders_count || 0;
+                const timeText = formatTimeAgo(node.last_updated);
 
-            // Name with query highlight
-            const nameSpan = document.createElement('span');
-            nameSpan.className = `node-name ${node.type}-name`;
-            nameSpan.innerHTML = highlightText(node.name, activeQuery);
-            row.appendChild(nameSpan);
-
-            li.appendChild(row);
-
-            // Children branch
-            if (node.children && node.children.length > 0) {
-                const childUl = document.createElement('ul');
-                childUl.className = 'tree-children';
-                node.children.forEach(child => {
-                    childUl.appendChild(buildNodeElement(child, activeQuery));
-                });
-                li.appendChild(childUl);
-
-                // Auto-expand if search is active or node is tagged autoExpanded
-                if (node.autoExpanded || activeQuery) {
-                    row.classList.remove('collapsed');
-                    childUl.style.display = 'block';
+                let childrenHtml = '';
+                if (node.children && node.children.length > 0) {
+                    childrenHtml = node.children.map(renderNode).join('');
                 }
 
-                // Row click toggles collapse
-                row.addEventListener('click', () => {
-                    const isCollapsed = row.classList.toggle('collapsed');
-                    childUl.style.display = isCollapsed ? 'none' : 'block';
-                });
-            }
-        } else if (node.type === 'file') {
-            row.setAttribute('data-url', node.url);
+                return `
+                    <details class="tree-domain" open>
+                        <summary class="tree-row domain-row">
+                            <span class="tree-chevron" aria-label="Toggle domain"></span>
+                            <span class="folder-icon domain-folder ${color}-folder">
+                                ${SVG_ICONS.domainFolder}
+                            </span>
+                            <span class="tree-name">
+                                <strong>${highlightText(node.name, query)}</strong>
+                                <small>${itemsCount} item${itemsCount !== 1 ? 's' : ''} <b>·</b> ${foldersCount} folder${foldersCount !== 1 ? 's' : ''}</small>
+                            </span>
+                            <span class="domain-type ${color}-label">${escapeHtml(domainType)}</span>
+                            <span class="row-meta">${escapeHtml(timeText)}</span>
+                            <span class="row-spacer"></span>
+                        </summary>
+                        ${childrenHtml}
+                    </details>
+                `;
+            } else if (node.type === 'folder') {
+                const filesCount = node.files_count || (node.children ? node.children.length : 0);
+                const pathText = node.path || `/${node.name}/`;
+                const timeText = formatTimeAgo(node.last_updated);
 
-            const ext = (node.extension || '').toLowerCase();
-            const category = classifyExtension(ext);
-
-            const iconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            iconSvg.setAttribute('class', `type-icon file-icon ${category}`);
-            iconSvg.setAttribute('viewBox', '0 0 24 24');
-            iconSvg.setAttribute('fill', 'none');
-            iconSvg.setAttribute('stroke-width', '2');
-            iconSvg.setAttribute('stroke-linecap', 'round');
-            iconSvg.setAttribute('stroke-linejoin', 'round');
-
-            if (category === 'video') {
-                iconSvg.innerHTML = `<polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>`;
-            } else if (category === 'image' || category === 'gif') {
-                iconSvg.innerHTML = `<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>`;
-            } else {
-                iconSvg.innerHTML = `<path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline>`;
-            }
-            row.appendChild(iconSvg);
-
-            // Extension tag
-            if (ext) {
-                const extTag = document.createElement('span');
-                extTag.className = `ext-tag ${category}`;
-                extTag.textContent = ext;
-                row.appendChild(extTag);
-            }
-
-            // File Name with Highlight
-            const nameSpan = document.createElement('span');
-            nameSpan.className = 'node-name file-name';
-            nameSpan.innerHTML = highlightText(node.name, activeQuery);
-            nameSpan.title = node.url;
-            row.appendChild(nameSpan);
-
-            // Duplicate Count Badge (if count > 1)
-            const count = node.count ?? 1;
-            if (count > 1) {
-                const badge = document.createElement('span');
-                badge.className = 'badge-count duplicate-active';
-                badge.textContent = `x${count}`;
-                badge.title = `Pasted ${count} times (${count - 1} duplicate${count > 2 ? 's' : ''})`;
-                row.appendChild(badge);
-            }
-
-            // Actions on Hover (Copy URL & Open Link)
-            const actionsDiv = document.createElement('div');
-            actionsDiv.className = 'node-actions';
-
-            // Copy Button
-            const copyBtn = document.createElement('button');
-            copyBtn.type = 'button';
-            copyBtn.className = 'node-action-btn';
-            copyBtn.title = 'Copy URL to clipboard';
-            copyBtn.innerHTML = `
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                </svg>
-            `;
-            copyBtn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                try {
-                    await navigator.clipboard.writeText(node.url);
-                    copyBtn.innerHTML = `
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent-emerald)" stroke-width="2.5">
-                            <polyline points="20 6 9 17 4 12"></polyline>
-                        </svg>
-                    `;
-                    showToast('Copied', 'Media URL copied to clipboard!', 'info', 2000);
-                    setTimeout(() => {
-                        copyBtn.innerHTML = `
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                            </svg>
-                        `;
-                    }, 1800);
-                } catch (err) {
-                    showToast('Error', 'Could not copy to clipboard', 'error');
+                let childrenHtml = '';
+                if (node.children && node.children.length > 0) {
+                    childrenHtml = node.children.map(renderNode).join('');
                 }
-            });
-            actionsDiv.appendChild(copyBtn);
 
-            // Open in New Tab Button
-            const openLink = document.createElement('a');
-            openLink.href = node.url;
-            openLink.target = '_blank';
-            openLink.rel = 'noopener noreferrer';
-            openLink.className = 'node-action-btn';
-            openLink.title = 'Open media in new tab';
-            openLink.innerHTML = `
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                    <polyline points="15 3 21 3 21 9"></polyline>
-                    <line x1="10" y1="14" x2="21" y2="3"></line>
-                </svg>
-            `;
-            openLink.addEventListener('click', (e) => e.stopPropagation());
-            actionsDiv.appendChild(openLink);
+                return `
+                    <details class="tree-folder" open>
+                        <summary class="tree-row folder-row">
+                            <span class="tree-chevron" aria-label="Toggle folder"></span>
+                            <span class="folder-icon nested-folder">
+                                ${SVG_ICONS.nestedFolder}
+                            </span>
+                            <span class="tree-name">
+                                <strong>${highlightText(node.name, query)}</strong>
+                                <small>${escapeHtml(pathText)}</small>
+                            </span>
+                            <span class="file-count">${filesCount} FILE${filesCount !== 1 ? 'S' : ''}</span>
+                            <span class="row-meta">${escapeHtml(timeText)}</span>
+                            <span class="row-spacer"></span>
+                        </summary>
+                        ${childrenHtml}
+                    </details>
+                `;
+            } else if (node.type === 'file') {
+                const ext = (node.extension || 'FILE').toUpperCase();
+                const mType = node.media_type || 'image';
+                const timeText = formatTimeAgo(node.last_updated || node.first_added);
+                const truncated = truncateUrl(node.url);
 
-            row.appendChild(actionsDiv);
-            li.appendChild(row);
+                let iconHtml = SVG_ICONS.image;
+                let iconClass = 'image-icon';
+                let chipClass = 'image-chip';
+
+                if (mType === 'gif' || ext === 'GIF') {
+                    iconHtml = `<span>GIF</span>`;
+                    iconClass = 'gif-icon';
+                    chipClass = 'gif-chip';
+                } else if (mType === 'video' || ['MP4', 'WEBM', 'MOV', 'M4V'].includes(ext)) {
+                    iconHtml = SVG_ICONS.video;
+                    iconClass = 'video-icon';
+                    chipClass = 'video-chip';
+                } else if (ext === 'WEBP') {
+                    iconClass = 'image-icon';
+                    chipClass = 'webp-chip';
+                } else if (mType === 'other') {
+                    iconHtml = SVG_ICONS.file;
+                    iconClass = 'other-icon';
+                    chipClass = 'other-chip';
+                }
+
+                const repeatsBadge = node.count > 1 
+                    ? `<span class="duplicate-badge" title="Submitted ${node.count} times">↻ ${node.count}</span>` 
+                    : `<span class="row-spacer"></span>`;
+
+                const isTarget = lastUpdatedUrl && node.url === lastUpdatedUrl;
+                const highlightStyle = isTarget ? 'style="background: #f0edff;"' : '';
+
+                return `
+                    <div class="file-row" ${highlightStyle} data-url="${escapeHtml(node.url)}">
+                        <span class="tree-spacer"></span>
+                        <span class="file-icon ${iconClass}">
+                            ${iconHtml}
+                        </span>
+                        <span class="file-name">
+                            <a href="${escapeHtml(node.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(node.url)}">
+                                <strong>${highlightText(node.name, query)}</strong>
+                            </a>
+                            <small title="${escapeHtml(node.url)}">${escapeHtml(truncated)}</small>
+                        </span>
+                        <span class="type-chip ${chipClass}">${escapeHtml(ext)}</span>
+                        <span class="row-meta">${escapeHtml(timeText)}</span>
+                        ${repeatsBadge}
+                    </div>
+                `;
+            }
+            return '';
         }
 
-        return li;
+        // Apply search filtering
+        function filterNode(node) {
+            if (!query) return node;
+
+            const nameMatches = node.name.toLowerCase().includes(query);
+            const pathMatches = node.path && node.path.toLowerCase().includes(query);
+            const urlMatches = node.url && node.url.toLowerCase().includes(query);
+            const extMatches = node.extension && node.extension.toLowerCase().includes(query);
+
+            if (node.type === 'file') {
+                return (nameMatches || urlMatches || extMatches) ? node : null;
+            }
+
+            if (node.children) {
+                const filteredChildren = node.children
+                    .map(filterNode)
+                    .filter(Boolean);
+
+                if (filteredChildren.length > 0 || nameMatches || pathMatches) {
+                    return {
+                        ...node,
+                        children: filteredChildren
+                    };
+                }
+            }
+
+            return null;
+        }
+
+        const filteredTree = query ? treeData.map(filterNode).filter(Boolean) : treeData;
+
+        if (filteredTree.length === 0) {
+            treeContainer.innerHTML = `
+                <div class="empty-tree-state">
+                    <h3 class="empty-title">No Matching Files</h3>
+                    <p class="empty-desc">No entries match your search query "<strong>${escapeHtml(query)}</strong>".</p>
+                </div>
+            `;
+            return;
+        }
+
+        html = filteredTree.map(renderNode).join('');
+        treeContainer.innerHTML = html;
     }
 
     // -------------------------------------------------------------
-    // 8. Search & Filter Event Handlers
+    // 6. Fetch & Refresh Tree Data
     // -------------------------------------------------------------
-    treeSearchInput.addEventListener('input', (e) => {
-        currentSearchQuery = e.target.value || '';
-        if (currentSearchQuery.trim()) {
-            clearSearchBtn.classList.remove('hidden');
-        } else {
-            clearSearchBtn.classList.add('hidden');
+    async function loadTreeData() {
+        try {
+            const response = await authFetch('/api/tree');
+            if (!response.ok) throw new Error('Failed to fetch data');
+
+            const data = await response.json();
+            if (data.status === 'success') {
+                rawTreeData = data.tree || [];
+                const stats = data.stats || {};
+
+                // Update Overview Stats
+                const totalUrls = stats.total_urls || 0;
+                const totalSources = stats.total_sources || rawTreeData.length || 0;
+                const duplicateSubs = stats.duplicate_submissions || 0;
+                const hasRecords = totalUrls > 0;
+
+                if (statTotalMedia) statTotalMedia.textContent = totalUrls;
+                if (statSources) statSources.textContent = totalSources;
+                if (statRepeats) statRepeats.textContent = duplicateSubs;
+                if (treeCountBadge) treeCountBadge.textContent = totalUrls;
+                if (footerCount) footerCount.textContent = `${totalUrls} item${totalUrls !== 1 ? 's' : ''}`;
+
+                // Dynamically disable or enable actions based on whether records exist
+                if (exportBtn) exportBtn.disabled = !hasRecords;
+                if (resetDbBtn) resetDbBtn.disabled = !hasRecords;
+                if (expandAllBtn) expandAllBtn.disabled = !hasRecords;
+                if (collapseAllBtn) collapseAllBtn.disabled = !hasRecords;
+                if (copyTreeTextBtn) copyTreeTextBtn.disabled = !hasRecords;
+                if (treeSearchInput) {
+                    treeSearchInput.disabled = !hasRecords;
+                    if (!hasRecords) {
+                        treeSearchInput.value = '';
+                        if (clearSearchBtn) clearSearchBtn.style.display = 'none';
+                    }
+                }
+
+                renderTree(rawTreeData, currentSearchQuery);
+            }
+        } catch (err) {
+            console.error('Error loading tree data:', err);
+            showToast('Sync Error', 'Could not load directory data.', 'error');
         }
-        applyFilterAndRender();
-    });
+    }
 
-    clearSearchBtn.addEventListener('click', () => {
-        treeSearchInput.value = '';
-        currentSearchQuery = '';
-        clearSearchBtn.classList.add('hidden');
-        treeSearchInput.focus();
-        applyFilterAndRender();
-    });
-
-    // Keyboard Shortcuts: '/' focuses search, 'Esc' clears
-    document.addEventListener('keydown', (e) => {
-        if (e.key === '/' && document.activeElement !== urlInput && document.activeElement !== treeSearchInput) {
-            e.preventDefault();
-            treeSearchInput.focus();
-        } else if (e.key === 'Escape' && document.activeElement === treeSearchInput) {
-            treeSearchInput.value = '';
-            currentSearchQuery = '';
-            clearSearchBtn.classList.add('hidden');
-            treeSearchInput.blur();
-            applyFilterAndRender();
+    // -------------------------------------------------------------
+    // 7. URL Submission Handling
+    // -------------------------------------------------------------
+    async function submitUrl(urlText) {
+        if (!urlText || !urlText.trim()) {
+            showToast('Invalid Input', 'Please enter a valid URL address.', 'error');
+            return;
         }
-    });
 
-    // Filter Pills Click Handler
-    filterPills.forEach(pill => {
-        pill.addEventListener('click', () => {
-            filterPills.forEach(p => p.classList.remove('active'));
-            pill.classList.add('active');
-            currentFilterType = pill.getAttribute('data-type') || 'all';
-            applyFilterAndRender();
-        });
-    });
+        const cleanUrl = urlText.trim();
+        submitBtn.disabled = true;
+        if (captureStatus) captureStatus.textContent = 'Analyzing URL structure...';
 
-    // Legend Click Filter
-    legendItems.forEach(item => {
-        item.addEventListener('click', () => {
-            const filterType = item.getAttribute('data-filter');
-            filterPills.forEach(p => {
-                const matches = p.getAttribute('data-type') === filterType;
-                p.classList.toggle('active', matches);
+        try {
+            const response = await authFetch('/api/urls', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: cleanUrl })
             });
-            currentFilterType = filterType;
-            applyFilterAndRender();
+
+            const data = await response.json();
+
+            if (response.ok && data.status === 'success') {
+                lastUpdatedUrl = cleanUrl;
+                urlInput.value = '';
+                if (clearUrlBtn) clearUrlBtn.style.display = 'none';
+
+                if (data.is_duplicate) {
+                    showToast(
+                        'Duplicate Caught',
+                        `Seen ${data.count} times. Frequency count incremented.`,
+                        'duplicate'
+                    );
+                } else {
+                    showToast(
+                        'URL Analyzed',
+                        `Added "${data.entry.filename}" to folder structure.`,
+                        'success'
+                    );
+                }
+
+                await loadTreeData();
+                if (captureStatus) captureStatus.textContent = 'Structure updated successfully';
+            } else {
+                showToast('Submission Failed', data.message || 'Could not analyze URL.', 'error');
+                if (captureStatus) captureStatus.textContent = data.message || 'Error parsing URL';
+            }
+        } catch (err) {
+            console.error('Submission error:', err);
+            showToast('Network Error', 'Failed to communicate with server.', 'error');
+            if (captureStatus) captureStatus.textContent = 'Network communication failure';
+        } finally {
+            submitBtn.disabled = false;
+        }
+    }
+
+    if (urlForm) {
+        urlForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            submitUrl(urlInput.value);
         });
-    });
+    }
+
+    // Toggle clear button on input typing
+    if (urlInput && clearUrlBtn) {
+        urlInput.addEventListener('input', () => {
+            clearUrlBtn.style.display = urlInput.value.trim() ? 'grid' : 'none';
+        });
+
+        clearUrlBtn.addEventListener('click', () => {
+            urlInput.value = '';
+            clearUrlBtn.style.display = 'none';
+            urlInput.focus();
+        });
+    }
+
+    // Quick Paste from Clipboard
+    if (pasteBtn) {
+        pasteBtn.addEventListener('click', async () => {
+            try {
+                if (navigator.clipboard && navigator.clipboard.readText) {
+                    const text = await navigator.clipboard.readText();
+                    if (text && text.trim()) {
+                        urlInput.value = text.trim();
+                        if (clearUrlBtn) clearUrlBtn.style.display = 'grid';
+                        urlInput.focus();
+                        showToast('Pasted', 'URL pasted from clipboard.', 'info', 2000);
+                    } else {
+                        showToast('Clipboard Empty', 'No text found in clipboard.', 'info');
+                    }
+                } else {
+                    urlInput.focus();
+                }
+            } catch {
+                urlInput.focus();
+            }
+        });
+    }
 
     // -------------------------------------------------------------
-    // 9. ASCII Directory Tree Exporter
+    // 8. Live Search & Tree Controls
     // -------------------------------------------------------------
+    if (treeSearchInput) {
+        treeSearchInput.addEventListener('input', (e) => {
+            currentSearchQuery = e.target.value;
+            if (clearSearchBtn) {
+                clearSearchBtn.style.display = currentSearchQuery ? 'grid' : 'none';
+            }
+            renderTree(rawTreeData, currentSearchQuery);
+        });
+    }
+
+    if (clearSearchBtn) {
+        clearSearchBtn.addEventListener('click', () => {
+            if (treeSearchInput) {
+                treeSearchInput.value = '';
+                currentSearchQuery = '';
+                clearSearchBtn.style.display = 'none';
+                renderTree(rawTreeData, '');
+                treeSearchInput.focus();
+            }
+        });
+    }
+
+    // Expand All / Collapse All
+    if (expandAllBtn) {
+        expandAllBtn.addEventListener('click', () => {
+            const detailsElements = treeContainer.querySelectorAll('details');
+            detailsElements.forEach(d => d.open = true);
+            showToast('Expanded', 'All directory branches opened.', 'info', 2000);
+        });
+    }
+
+    if (collapseAllBtn) {
+        collapseAllBtn.addEventListener('click', () => {
+            const detailsElements = treeContainer.querySelectorAll('details');
+            detailsElements.forEach(d => d.open = false);
+            showToast('Collapsed', 'All directory branches closed.', 'info', 2000);
+        });
+    }
+
+    // Copy ASCII Tree Diagram
     function generateAsciiTree(nodes, indent = '') {
-        let lines = [];
+        let result = '';
         nodes.forEach((node, idx) => {
             const isLast = idx === nodes.length - 1;
             const branch = isLast ? '└── ' : '├── ';
             const childIndent = indent + (isLast ? '    ' : '│   ');
 
             if (node.type === 'domain') {
-                lines.push(`${indent}${branch}🌐 ${node.name}`);
+                result += `${indent}${branch}🌐 ${node.name} (${node.domain_type || 'SOURCE'})\n`;
             } else if (node.type === 'folder') {
-                lines.push(`${indent}${branch}📁 ${node.name}/`);
-            } else {
-                const dup = (node.count > 1) ? ` [x${node.count}]` : '';
-                lines.push(`${indent}${branch}📄 ${node.name}${dup}`);
+                result += `${indent}${branch}📁 ${node.name}/\n`;
+            } else if (node.type === 'file') {
+                const countBadge = node.count > 1 ? ` (↻ ${node.count})` : '';
+                result += `${indent}${branch}📄 ${node.name} [${node.extension || 'FILE'}]${countBadge}\n`;
             }
 
             if (node.children && node.children.length > 0) {
-                lines.push(generateAsciiTree(node.children, childIndent));
+                result += generateAsciiTree(node.children, childIndent);
             }
         });
-        return lines.join('\n');
+        return result;
     }
 
-    copyTreeTextBtn.addEventListener('click', async () => {
-        if (!rawTreeData || rawTreeData.length === 0) {
-            showToast('Tree Empty', 'No tree structure to copy.', 'info');
-            return;
-        }
-
-        try {
-            const ascii = generateAsciiTree(rawTreeData);
-            await navigator.clipboard.writeText(ascii);
-            showToast('Tree Copied', 'ASCII directory hierarchy copied to clipboard!', 'success');
-        } catch (err) {
-            showToast('Copy Failed', 'Could not copy tree to clipboard.', 'error');
-        }
-    });
-
-    // Expand & Collapse All
-    expandAllBtn.addEventListener('click', () => {
-        const folderRows = document.querySelectorAll('.domain-row, .folder-row');
-        folderRows.forEach(row => {
-            row.classList.remove('collapsed');
-            const childUl = row.parentElement.querySelector('.tree-children');
-            if (childUl) childUl.style.display = 'block';
-        });
-    });
-
-    collapseAllBtn.addEventListener('click', () => {
-        const folderRows = document.querySelectorAll('.domain-row, .folder-row');
-        folderRows.forEach(row => {
-            row.classList.add('collapsed');
-            const childUl = row.parentElement.querySelector('.tree-children');
-            if (childUl) childUl.style.display = 'none';
-        });
-    });
-
-    // -------------------------------------------------------------
-    // 10. URL Submission Workflow
-    // -------------------------------------------------------------
-    async function submitUrl(url) {
-        const trimmed = url ? url.trim() : '';
-        if (!trimmed) {
-            showToast('Invalid URL', 'Please enter a non-empty media URL.', 'error');
-            return;
-        }
-
-        submitBtn.disabled = true;
-        const spinner = submitBtn.querySelector('.btn-spinner');
-        const icon = submitBtn.querySelector('.btn-icon');
-        if (spinner) spinner.classList.remove('hidden');
-        if (icon) icon.classList.add('hidden');
-
-        try {
-            const response = await authFetch('/api/urls', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: trimmed })
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                showToast('Validation Error', data.message || 'Unable to parse URL.', 'error');
-            } else {
-                lastUpdatedUrl = trimmed;
-
-                if (data.is_duplicate) {
-                    showToast(
-                        'Duplicate Caught',
-                        `URL already stored! Paste count increased to x${data.count}.`,
-                        'duplicate',
-                        4500
-                    );
-                } else {
-                    showToast(
-                        'URL Analyzed',
-                        `Added "${data.entry?.filename || 'file'}" to storage tree.`,
-                        'success',
-                        4000
-                    );
-                }
-
-                urlInput.value = '';
-                toggleClearInputBtn();
-                await loadTreeData();
+    if (copyTreeTextBtn) {
+        copyTreeTextBtn.addEventListener('click', async () => {
+            if (!rawTreeData || rawTreeData.length === 0) {
+                showToast('Empty Tree', 'No directory structure to copy.', 'info');
+                return;
             }
-        } catch (err) {
-            console.error('Submission failed:', err);
-            showToast('Network Error', 'Could not reach the server to analyze URL.', 'error');
-        } finally {
-            submitBtn.disabled = false;
-            if (spinner) spinner.classList.add('hidden');
-            if (icon) icon.classList.remove('hidden');
-        }
-    }
 
-    function toggleClearInputBtn() {
-        if (!clearInputBtn) return;
-        if (urlInput.value && urlInput.value.length > 0) {
-            clearInputBtn.classList.remove('hidden');
-        } else {
-            clearInputBtn.classList.add('hidden');
-        }
-    }
+            const ascii = 'MEDIA INDEX — DIRECTORY HIERARCHY\n' +
+                          '=================================\n' +
+                          generateAsciiTree(rawTreeData);
 
-    urlInput.addEventListener('input', toggleClearInputBtn);
-
-    if (clearInputBtn) {
-        clearInputBtn.addEventListener('click', () => {
-            urlInput.value = '';
-            toggleClearInputBtn();
-            urlInput.focus();
+            try {
+                await navigator.clipboard.writeText(ascii);
+                showToast('Copied to Clipboard', 'ASCII directory tree copied successfully!', 'success');
+            } catch {
+                showToast('Copy Failed', 'Clipboard access not permitted.', 'error');
+            }
         });
     }
 
-    urlForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        submitUrl(urlInput.value);
-    });
-
-    pasteBtn.addEventListener('click', async () => {
-        try {
-            if (navigator.clipboard && navigator.clipboard.readText) {
-                const text = await navigator.clipboard.readText();
-                if (text && text.trim()) {
-                    urlInput.value = text.trim();
-                    toggleClearInputBtn();
-                    urlInput.focus();
-                } else {
-                    showToast('Clipboard Empty', 'No text found in clipboard.', 'info');
-                }
-            } else {
-                urlInput.focus();
-                showToast('Clipboard Notice', 'Direct clipboard reading unavailable. Use Ctrl+V.', 'info');
-            }
-        } catch (err) {
-            urlInput.focus();
-            showToast('Clipboard Notice', 'Please paste manually using Ctrl+V or right-click.', 'info');
-        }
-    });
-
     // -------------------------------------------------------------
-    // 11. Export & Import Workflows
+    // 9. Export & Import Backup
     // -------------------------------------------------------------
-    async function handleExport() {
-        try {
-            showToast('Preparing Export', 'Generating your database export...', 'info', 2000);
-            const response = await authFetch('/api/export');
-            if (!response.ok) throw new Error('Export request failed');
-
-            const disposition = response.headers.get('Content-Disposition');
-            let filename = 'mua_export.json';
-            if (disposition && disposition.includes('filename=')) {
-                const match = disposition.match(/filename="?([^";]+)"?/);
-                if (match && match[1]) filename = match[1];
+    if (exportBtn) {
+        exportBtn.addEventListener('click', async () => {
+            if (!rawTreeData || rawTreeData.length === 0) {
+                showToast('No Records', 'Nothing to export. Add some URLs first.', 'info');
+                return;
             }
 
-            const blob = await response.blob();
-            const downloadUrl = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = downloadUrl;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(downloadUrl);
+            try {
+                showToast('Exporting Data', 'Preparing backup JSON...', 'info', 2000);
+                const response = await authFetch('/api/export');
+                if (!response.ok) throw new Error('Export failed');
 
-            showToast('Export Ready', `Downloaded "${filename}" successfully.`, 'success');
-        } catch (err) {
-            console.error('Export error:', err);
-            showToast('Export Failed', 'Could not export database.', 'error');
-        }
+                const blob = await response.blob();
+                const now = new Date();
+                const dateStr = now.toISOString().slice(0, 10);
+                const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, '');
+                const filename = `media_index_export_${dateStr}_${timeStr}.json`;
+
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+
+                showToast('Export Complete', `Saved as ${filename}`, 'success');
+            } catch (err) {
+                console.error('Export error:', err);
+                showToast('Export Error', 'Failed to generate backup JSON.', 'error');
+            }
+        });
     }
 
-    exportBtn.addEventListener('click', handleExport);
-    sidebarExportBtn.addEventListener('click', handleExport);
+    if (importBtn && importFileInput) {
+        importBtn.addEventListener('click', () => {
+            importFileInput.value = '';
+            importFileInput.click();
+        });
 
-    function triggerImportPicker() {
-        importFileInput.value = '';
-        importFileInput.click();
-    }
+        importFileInput.addEventListener('change', async (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
 
-    importBtn.addEventListener('click', triggerImportPicker);
-    sidebarImportBtn.addEventListener('click', triggerImportPicker);
-
-    importFileInput.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        showToast('Processing Import', `Reading "${file.name}"...`, 'info', 3000);
-
-        try {
+            showToast('Importing Data', `Parsing ${file.name}...`, 'info', 2500);
             const formData = new FormData();
             formData.append('file', file);
 
-            const response = await authFetch('/api/import', {
-                method: 'POST',
-                body: formData
-            });
+            try {
+                const response = await authFetch('/api/import', {
+                    method: 'POST',
+                    body: formData
+                });
 
-            const data = await response.json();
-            if (!response.ok) {
-                showToast('Import Error', data.message || 'Failed to import JSON file.', 'error');
-            } else {
-                showToast(
-                    'Import Complete',
-                    `Successfully added ${data.imported} new and merged ${data.merged} existing URLs!`,
-                    'success',
-                    5000
-                );
-                await loadTreeData();
+                const data = await response.json();
+                if (response.ok && data.status === 'success') {
+                    showToast(
+                        'Import Successful',
+                        `Imported ${data.imported_count || 0} URLs (${data.duplicate_count || 0} duplicates merged).`,
+                        'success'
+                    );
+                    await loadTreeData();
+                } else {
+                    showToast('Import Failed', data.message || 'Invalid backup file.', 'error');
+                }
+            } catch (err) {
+                console.error('Import error:', err);
+                showToast('Import Error', 'Failed to upload backup JSON.', 'error');
             }
-        } catch (err) {
-            console.error('Import error:', err);
-            showToast('Import Failed', 'Failed to parse and upload JSON file.', 'error');
-        }
-    });
+        });
+    }
 
     // -------------------------------------------------------------
-    // 12. Reset Database Workflow
+    // 10. Reset Database Modal
     // -------------------------------------------------------------
-    resetBtn.addEventListener('click', async () => {
-        const confirmed = confirm(
-            'Are you sure you want to clear all stored URLs? This cannot be undone.'
+    function openResetModal() {
+        if (!rawTreeData || rawTreeData.length === 0) {
+            showToast('Database Empty', 'No records to clear.', 'info');
+            return;
+        }
+        if (resetModal) resetModal.classList.add('active');
+    }
+
+    function closeResetModal() {
+        if (resetModal) resetModal.classList.remove('active');
+    }
+
+    if (resetDbBtn) resetDbBtn.addEventListener('click', openResetModal);
+    if (cancelResetBtn) cancelResetBtn.addEventListener('click', closeResetModal);
+
+    if (confirmResetBtn) {
+        confirmResetBtn.addEventListener('click', async () => {
+            closeResetModal();
+            try {
+                const response = await authFetch('/api/clear', { method: 'POST' });
+                const data = await response.json();
+
+                if (response.ok && data.status === 'cleared') {
+                    showToast('Database Reset', 'All stored URLs have been cleared.', 'info');
+                    await loadTreeData();
+                } else {
+                    showToast('Reset Failed', data.message || 'Could not reset database.', 'error');
+                }
+            } catch (err) {
+                console.error('Reset error:', err);
+                showToast('Network Error', 'Failed to reset database.', 'error');
+            }
+        });
+    }
+
+    // -------------------------------------------------------------
+    // Keyboard Shortcuts & Escape Key Handling
+    // -------------------------------------------------------------
+    document.addEventListener('keydown', (e) => {
+        const activeEl = document.activeElement;
+        const isTyping = activeEl && (
+            activeEl.tagName === 'INPUT' || 
+            activeEl.tagName === 'TEXTAREA' || 
+            activeEl.isContentEditable
         );
-        if (!confirmed) return;
 
-        try {
-            const res = await authFetch('/api/clear', { method: 'POST' });
-            const data = await res.json();
-            if (res.ok) {
-                lastUpdatedUrl = null;
-                showToast('Data Cleared', 'All analyzed URLs have been reset.', 'info');
-                await loadTreeData();
-            } else {
-                showToast('Reset Error', data.message || 'Could not reset database.', 'error');
+        // Escape key handling across components
+        if (e.key === 'Escape') {
+            // 1. Close Modal if active
+            if (resetModal && resetModal.classList.contains('active')) {
+                closeResetModal();
+                return;
             }
-        } catch (err) {
-            console.error('Reset error:', err);
-            showToast('Reset Error', 'Error connecting to server for reset.', 'error');
+
+            // 2. Clear & blur main URL input
+            if (activeEl === urlInput) {
+                if (urlInput.value) {
+                    urlInput.value = '';
+                    if (clearUrlBtn) clearUrlBtn.style.display = 'none';
+                } else {
+                    urlInput.blur();
+                }
+                return;
+            }
+
+            // 3. Clear & blur search input
+            if (activeEl === treeSearchInput) {
+                if (treeSearchInput.value) {
+                    treeSearchInput.value = '';
+                    currentSearchQuery = '';
+                    if (clearSearchBtn) clearSearchBtn.style.display = 'none';
+                    renderTree(rawTreeData, '');
+                } else {
+                    treeSearchInput.blur();
+                }
+                return;
+            }
+        }
+
+        // Shortcut: Focus main URL entry textbox (Press 'u' or Alt+U)
+        if ((e.key === 'u' || e.key === 'U') && !isTyping && !e.ctrlKey && !e.metaKey) {
+            e.preventDefault();
+            if (urlInput) {
+                urlInput.focus();
+                urlInput.select();
+            }
+            return;
+        }
+
+        if (e.altKey && (e.key === 'u' || e.key === 'U')) {
+            e.preventDefault();
+            if (urlInput) {
+                urlInput.focus();
+                urlInput.select();
+            }
+            return;
+        }
+
+        // Shortcut: Focus search input (Press '/')
+        if (e.key === '/' && !isTyping && !e.ctrlKey && !e.metaKey) {
+            e.preventDefault();
+            if (treeSearchInput && !treeSearchInput.disabled) {
+                treeSearchInput.focus();
+                treeSearchInput.select();
+            }
+            return;
         }
     });
 
+    if (resetModal) {
+        resetModal.addEventListener('click', (e) => {
+            if (e.target === resetModal) closeResetModal();
+        });
+    }
+
     // -------------------------------------------------------------
-    // Initial Load
+    // 11. Initial Load
     // -------------------------------------------------------------
     loadTreeData();
 });

@@ -7,19 +7,20 @@ A lightweight web application built with Python (Flask) and Vanilla JavaScript t
 ## 🎯 Purpose & Key Features
 
 - **Storage Pattern Extraction**: Analyzes URL structures using standard URL parsing to extract domains, nested directory paths, and file resources.
-- **Visual Folder Tree**: Transforms flat URL paths into an interactive directory tree (collapsible folders, extension-colored file nodes, live filter).
-- **Duplicate Tracking**: Tracks frequency of URL submissions. If an existing URL is submitted again, its duplicate count increments without creating duplicate tree branches.
-- **Browser Session Isolation**: Automatically identifies browsers using a client-side UUID (`localStorage`) and namespaces data in `url_database.json`, ensuring complete privacy between users/browsers without heavy login systems.
-- **Export & Import (Data Portability)**: Export your analyzed URLs with a standard timestamped file name (`mua_export_<YYYY-MM-DD>_<HHMMSS>.json`) and seamlessly import/merge backup datasets.
-- **Non-Intrusive Toast UX**: Replaced jarring auto-scroll with modern top-right animated toast notifications and soft in-place pulse animations.
-- **Responsive Glassmorphism UI**: Two-column layout with quick clipboard pasting, live tree search, and collapsible branches.
+- **Structured Tree-Table Explorer**: Transforms flat URL paths into an interactive directory tree-table (`<details>`/`<summary>`) with fixed column alignment (`NAME`, `TYPE`, `ADDED`, `REPEATS`), color-coded domain badges (`IMAGE SOURCE`, `DESIGN CDN`, `VIDEO SOURCE`), and media chips (`JPG`, `WEBP`, `GIF`, `MP4`).
+- **Duplicate Tracking**: Tracks frequency of URL submissions. If an existing URL is submitted again, its duplicate count increments without creating duplicate tree branches, highlighted by pill badges (`↻ 2`).
+- **Live Search & Branch Control**: Real-time substring search with match highlighting, live count badge, branch auto-expansion, and one-click Expand/Collapse/Copy ASCII tree controls.
+- **Browser Session Isolation**: Automatically identifies browsers using a client-side UUID (`localStorage`) and namespaces data in `url_database.json`, ensuring complete privacy between users/browsers without requiring accounts.
+- **Export & Import (Data Portability)**: Export your analyzed URLs with a standard timestamped file name (`media_index_export_<YYYY-MM-DD>_<HHMMSS>.json`) and seamlessly import/merge backup datasets.
+- **Non-Intrusive Toast UX**: Modern top-right animated toast notifications with progress bars for every user action.
+- **Modern SaaS Aesthetics**: Clean light-mode design matching the prototype with `DM Sans` typography, `IBM Plex Mono` code fonts, and subtle elevation on `#f7f8fc`.
 
 ---
 
 ## 🛠️ Tech Stack
 
 - **Backend**: Python 3, Flask
-- **Frontend**: Vanilla HTML5, Modern CSS3 (Glassmorphism), Vanilla JavaScript (ES6+)
+- **Frontend**: Vanilla HTML5 (Semantic details/summary), Modern CSS3 (`DM Sans`, `IBM Plex Mono`), Vanilla JavaScript (ES6+)
 - **Data Storage**: Namespaced JSON storage with atomic write protection
 
 ---

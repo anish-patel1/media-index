@@ -147,6 +147,10 @@ class TestAppRoutes(unittest.TestCase):
         self.assertEqual(tree_res.get_json()["stats"]["total_urls"], 1)
         self.assertEqual(tree_res.get_json()["stats"]["total_submissions"], 5)
 
+    def test_favicon(self):
+        res = self.client.get("/favicon.ico")
+        self.assertEqual(res.status_code, 200)
+
 
 if __name__ == "__main__":
     unittest.main()

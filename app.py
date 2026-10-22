@@ -2,7 +2,7 @@ import io
 import json
 import os
 from datetime import datetime, timezone
-from flask import Flask, render_template, request, jsonify, Response, send_file
+from flask import Flask, render_template, request, jsonify, Response, send_file, send_from_directory
 from database import URLDatabase
 
 # Initialize Flask app
@@ -42,6 +42,12 @@ def get_user_id() -> str:
 def index():
     """Renders the main web interface."""
     return render_template("index.html")
+
+
+@app.route("/favicon.ico")
+def favicon():
+    """Serves the website favicon."""
+    return send_from_directory(os.path.join(app.root_path, "static"), "favicon.ico", mimetype="image/x-icon")
 
 
 @app.route("/api/urls", methods=["POST"])

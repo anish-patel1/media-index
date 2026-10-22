@@ -1,67 +1,68 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Media URL Analyzer — Visual Directory & Duplicate Tracker</title>
-    <meta name="description" content="Parse media URLs, visualize their storage directory patterns in an interactive hierarchy tree, and track duplicate submissions.">
-    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <title>mediaIndex — Media URL Analyzer</title>
+    <meta name="description"
+        content="Parse media URLs, visualize their storage directory patterns in an interactive hierarchy tree-table, and track duplicate submissions.">
+    <!-- Favicon matching prototype -->
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <!-- Google Fonts: DM Sans & IBM Plex Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+        rel="stylesheet">
     <!-- Main Stylesheet -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
+
 <body>
     <!-- Floating Toast Notifications Container -->
     <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-    <div class="app-layout">
-        <!-- Top App Navigation & Header -->
-        <header class="app-header">
-            <div class="header-brand">
-                <div class="brand-icon-wrapper" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                        <line x1="12" y1="11" x2="12" y2="17"></line>
-                        <line x1="9" y1="14" x2="15" y2="14"></line>
-                    </svg>
-                </div>
-                <div>
-                    <div class="brand-title-badge-row">
-                        <h1 class="app-title">Media URL Analyzer</h1>
-                        <span class="version-tag">v2.0</span>
-                    </div>
-                    <p class="app-tagline">Storage pattern hierarchy visualizer & duplicate tracker</p>
-                </div>
-            </div>
+    <main class="main-content" id="library">
+        <!-- Top Navigation Bar -->
+        <header class="topbar">
+            <a class="brand" href="/" aria-label="mediaIndex Home">
+                <img src="{{ url_for('static', filename='favicon.png') }}" alt="mediaIndex" class="brand-mark" width="38" height="38">
+                <span class="brand-copy">
+                    <strong>media<span>index</span></strong>
+                </span>
+            </a>
 
-            <!-- Top Header Actions (User ID completely removed from UI) -->
-            <div class="header-actions">
-                <!-- Export Data Button -->
-                <button type="button" id="export-btn" class="header-action-btn" title="Download backup JSON of analyzed URLs">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <!-- Topbar Global Actions -->
+            <div class="topbar-actions">
+                <!-- Export Backup Button (Arrow pointing up/out) -->
+                <button type="button" id="export-btn" class="button button-outline"
+                    title="Export database to JSON file" disabled>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                        <polyline points="7 10 12 15 17 10"></polyline>
-                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
                     </svg>
                     <span>Export</span>
                 </button>
 
-                <!-- Import Data Button -->
-                <button type="button" id="import-btn" class="header-action-btn" title="Import URLs from backup JSON">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <!-- Import Backup Button (Arrow pointing down/in) -->
+                <button type="button" id="import-btn" class="button button-outline"
+                    title="Import database from JSON file">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                        <polyline points="17 8 12 3 7 8"></polyline>
-                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
                     </svg>
                     <span>Import</span>
                 </button>
                 <input type="file" id="import-file-input" accept=".json,application/json" style="display: none;">
 
                 <!-- Reset Database Button -->
-                <button type="button" id="reset-db-btn" class="header-action-btn danger" title="Clear all stored URLs">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <button type="button" id="reset-db-btn" class="button button-danger-subtle"
+                    title="Clear all stored URLs" disabled>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <polyline points="3 6 5 6 21 6"></polyline>
                         <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                     </svg>
@@ -70,317 +71,191 @@
             </div>
         </header>
 
-        <!-- Stats Overview Ribbon -->
-        <section class="stats-grid" aria-label="Summary Statistics">
-            <div class="stat-card unique" id="card-stat-unique">
-                <div class="stat-icon-wrap" aria-hidden="true">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-                    </svg>
+        <!-- Page Wrap -->
+        <div class="page-wrap">
+            <!-- Hero Heading & Live Collection Stats -->
+            <section class="page-heading">
+                <div class="heading-copy">
+                    <p class="eyebrow"><span class="eyebrow-line"></span> DIRECTORY ANALYZER</p>
                 </div>
-                <div class="stat-details">
-                    <div id="stat-unique-urls" class="stat-value">0</div>
-                    <div class="stat-title">Unique URLs</div>
-                    <div class="stat-meta">Distinct media files stored</div>
-                </div>
-            </div>
 
-            <div class="stat-card pastes" id="card-stat-pastes">
-                <div class="stat-icon-wrap" aria-hidden="true">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="20 6 9 17 4 12"></polyline>
-                    </svg>
+                <div class="collection-overview" aria-label="Collection Overview">
+                    <span><strong id="stat-total-media">0</strong> media items</span>
+                    <i></i>
+                    <span><strong id="stat-sources">0</strong> sources</span>
+                    <i></i>
+                    <span><strong id="stat-repeats">0</strong> repeats</span>
                 </div>
-                <div class="stat-details">
-                    <div id="stat-total-submissions" class="stat-value">0</div>
-                    <div class="stat-title">Total Pastes</div>
-                    <div class="stat-meta">Total URLs processed</div>
-                </div>
-            </div>
+            </section>
 
-            <div class="stat-card duplicates" id="card-stat-duplicates">
-                <div class="stat-icon-wrap" aria-hidden="true">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                    </svg>
-                </div>
-                <div class="stat-details">
-                    <div id="stat-duplicates" class="stat-value">0</div>
-                    <div class="stat-title">Duplicates Caught</div>
-                    <div class="stat-meta">Redundant pastes identified</div>
-                </div>
-            </div>
-        </section>
+            <!-- URL Capture Card -->
+            <section class="capture-card" aria-labelledby="files-title">
+                <form id="url-form" class="capture-form" onsubmit="return false;">
+                    <span class="input-link-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24">
+                            <path
+                                d="M10 13.5a4.7 4.7 0 0 0 6.8.2l3-3a4.8 4.8 0 0 0-6.8-6.8l-1.7 1.7M14 10.5a4.7 4.7 0 0 0-6.8-.2l-3 3A4.8 4.8 0 0 0 11 20.1l1.7-1.7" />
+                        </svg>
+                    </span>
+                    <input id="url-input" type="url"
+                        placeholder="https://images.unsplash.com/photo-1470770841072-f978cf4d019e"
+                        aria-label="URL address"
+                        title="Press 'U' to focus, 'Esc' to clear"
+                        autocomplete="off" spellcheck="false" required>
 
-        <!-- Two-Column Workspace Layout -->
-        <main class="workspace-grid">
-            <!-- Left Column: Input Form, Media Distribution & Quick Actions -->
-            <div class="workspace-sidebar">
-                <!-- Input Panel -->
-                <section class="panel-card input-card" aria-labelledby="input-heading">
-                    <div class="card-header">
-                        <div class="card-title-group">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="12" cy="12" r="10"></circle>
-                                <line x1="12" y1="8" x2="12" y2="12"></line>
-                                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    <!-- Shortcut Hint badge -->
+                    <kbd class="kbd-hint" id="url-kbd-hint" title="Press U to focus">U</kbd>
+
+                    <!-- Quick Clear Button (visible when text is present) -->
+                    <button type="button" id="clear-url-btn" class="clear-url-btn" title="Clear input" aria-label="Clear input" style="display: none;">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+
+                    <!-- Paste Clipboard Quick Button (icon only, reveals 'Paste' on hover) -->
+                    <button type="button" id="paste-clipboard-btn" class="paste-quick-btn"
+                        title="Paste from clipboard" aria-label="Paste from clipboard">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                            <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                        </svg>
+                        <span class="paste-label">Paste</span>
+                    </button>
+
+                    <!-- Submit URL Button -->
+                    <button id="submit-url-btn" class="capture-submit" type="submit">
+                        <span>Analyze URL</span> <span class="submit-arrow" aria-hidden="true">↗</span>
+                    </button>
+                </form>
+
+                <div class="capture-foot">
+                    <span class="supported">Images <i>·</i> GIFs <i>·</i> Videos</span>
+                    <span class="shortcuts-legend" aria-label="Keyboard shortcuts">
+                        <kbd>U</kbd> Focus URL <i>·</i> <kbd>/</kbd> Search <i>·</i> <kbd>Esc</kbd> Clear
+                    </span>
+                    <span id="capture-status" class="capture-status-text">Direct links to images, videos or GIFs</span>
+                </div>
+            </section>
+
+            <!-- Library / Structured Tree-Table Section -->
+            <section class="library-section" aria-labelledby="files-title">
+                <div class="library-toolbar">
+                    <div class="library-title">
+                        <h2 id="files-title">Folder structure <span class="soft-count" id="tree-count-badge">0</span>
+                        </h2>
+                        <p>Analyzed files arranged by source and path</p>
+                    </div>
+
+                    <div class="toolbar-actions">
+                        <!-- Search Box -->
+                        <label class="search-box" for="tree-search-input">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <circle cx="10.8" cy="10.8" r="6.8" />
+                                <path d="m16 16 4.5 4.5" />
                             </svg>
-                            <h2 id="input-heading" class="card-title">Analyze Media URL</h2>
-                        </div>
-                    </div>
+                            <input type="search" id="tree-search-input" placeholder="Search files..."
+                                aria-label="Search files" title="Press '/' to search, 'Esc' to clear">
+                            <kbd class="kbd-hint" id="search-kbd-hint" title="Press / to search">/</kbd>
+                            <button type="button" id="clear-search-btn" class="clear-search-btn" title="Clear search"
+                                style="display: none;">✕</button>
+                        </label>
 
-                    <form id="url-form" onsubmit="return false;">
-                        <div class="form-group">
-                            <label for="url-input" class="form-label">Media URL Address</label>
-                            <div class="input-with-icon">
-                                <svg class="field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <circle cx="12" cy="12" r="10"></circle>
-                                    <line x1="2" y1="12" x2="22" y2="12"></line>
-                                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-                                </svg>
-                                <input 
-                                    type="url" 
-                                    id="url-input" 
-                                    class="text-input" 
-                                    placeholder="https://example.com/assets/2026/photo.png" 
-                                    required
-                                    autocomplete="off"
-                                    spellcheck="false"
-                                >
-                                <button type="button" id="clear-input-btn" class="icon-btn-inline hidden" title="Clear input">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <line x1="18" y1="6" x2="6" y2="18"></line>
-                                        <line x1="6" y1="6" x2="18" y2="18"></line>
-                                    </svg>
-                                </button>
-                            </div>
-                        </div>
-
-                        <div class="form-actions-row">
-                            <button type="button" id="paste-clipboard-btn" class="btn btn-secondary" title="Paste URL from clipboard (Ctrl+V)">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
-                                    <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
-                                </svg>
-                                <span>Paste</span>
-                            </button>
-
-                            <button type="submit" id="submit-url-btn" class="btn btn-primary">
-                                <span class="btn-spinner hidden" aria-hidden="true"></span>
-                                <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                                </svg>
-                                <span>Analyze URL</span>
-                            </button>
-                        </div>
-                    </form>
-                </section>
-
-                <!-- Media Breakdown Widget -->
-                <section class="panel-card distribution-card" aria-labelledby="dist-heading">
-                    <div class="card-header">
-                        <div class="card-title-group">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <rect x="3" y="3" width="7" height="7"></rect>
-                                <rect x="14" y="3" width="7" height="7"></rect>
-                                <rect x="14" y="14" width="7" height="7"></rect>
-                                <rect x="3" y="14" width="7" height="7"></rect>
+                        <!-- Expand All Branches (Universal Expand Outward Icon) -->
+                        <button type="button" id="expand-all-btn" class="tree-action-icon-btn"
+                            title="Expand all folders" disabled>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <polyline points="15 3 21 3 21 9"></polyline>
+                                <polyline points="9 21 3 21 3 15"></polyline>
+                                <line x1="21" y1="3" x2="14" y2="10"></line>
+                                <line x1="3" y1="21" x2="10" y2="14"></line>
                             </svg>
-                            <h2 id="dist-heading" class="card-title">Media Types</h2>
-                        </div>
-                        <span id="dist-total-count" class="badge-pill">0 files</span>
-                    </div>
-
-                    <!-- Visual Segmented Bar -->
-                    <div class="media-progress-bar" id="media-progress-bar" title="Media Type Ratio">
-                        <div class="progress-seg seg-image" id="prog-image" style="width: 0%"></div>
-                        <div class="progress-seg seg-video" id="prog-video" style="width: 0%"></div>
-                        <div class="progress-seg seg-gif" id="prog-gif" style="width: 0%"></div>
-                        <div class="progress-seg seg-other" id="prog-other" style="width: 0%"></div>
-                    </div>
-
-                    <!-- Breakdown Legend -->
-                    <div class="media-breakdown-legend">
-                        <div class="legend-item" data-filter="image">
-                            <span class="legend-dot dot-image"></span>
-                            <span class="legend-label">Images</span>
-                            <span class="legend-count" id="count-images">0</span>
-                        </div>
-                        <div class="legend-item" data-filter="video">
-                            <span class="legend-dot dot-video"></span>
-                            <span class="legend-label">Videos</span>
-                            <span class="legend-count" id="count-videos">0</span>
-                        </div>
-                        <div class="legend-item" data-filter="gif">
-                            <span class="legend-dot dot-gif"></span>
-                            <span class="legend-label">GIFs</span>
-                            <span class="legend-count" id="count-gifs">0</span>
-                        </div>
-                        <div class="legend-item" data-filter="other">
-                            <span class="legend-dot dot-other"></span>
-                            <span class="legend-label">Other</span>
-                            <span class="legend-count" id="count-other">0</span>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- Data Management Card -->
-                <section class="panel-card data-card" aria-labelledby="data-mgmt-heading">
-                    <div class="card-header">
-                        <div class="card-title-group">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-                                <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-                                <line x1="12" y1="22.08" x2="12" y2="12"></line>
-                            </svg>
-                            <h2 id="data-mgmt-heading" class="card-title">Data Backup & Restore</h2>
-                        </div>
-                    </div>
-                    <p class="card-subtitle">
-                        Safeguard analyzed URLs or import your backup JSON files with automatic duplicate merging.
-                    </p>
-                    <div class="data-actions-grid">
-                        <button type="button" id="sidebar-export-btn" class="data-action-card">
-                            <div class="data-icon green">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                    <polyline points="7 10 12 15 17 10"></polyline>
-                                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                                </svg>
-                            </div>
-                            <div class="data-text">
-                                <div class="data-name">Export Data</div>
-                                <div class="data-desc">Standard timestamped JSON</div>
-                            </div>
+                            <span>Expand</span>
                         </button>
 
-                        <button type="button" id="sidebar-import-btn" class="data-action-card">
-                            <div class="data-icon blue">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                    <polyline points="17 8 12 3 7 8"></polyline>
-                                    <line x1="12" y1="3" x2="12" y2="15"></line>
-                                </svg>
-                            </div>
-                            <div class="data-text">
-                                <div class="data-name">Import Data</div>
-                                <div class="data-desc">Upload & merge backup</div>
-                            </div>
+                        <!-- Collapse All Branches (Universal Collapse Inward Icon) -->
+                        <button type="button" id="collapse-all-btn" class="tree-action-icon-btn"
+                            title="Collapse all folders" disabled>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <polyline points="4 14 10 14 10 20"></polyline>
+                                <polyline points="20 10 14 10 14 4"></polyline>
+                                <line x1="14" y1="10" x2="21" y2="3"></line>
+                                <line x1="3" y1="21" x2="10" y2="14"></line>
+                            </svg>
+                            <span>Collapse</span>
+                        </button>
+
+                        <!-- Copy ASCII Tree Diagram -->
+                        <button type="button" id="copy-tree-text-btn" class="tree-action-icon-btn"
+                            title="Copy ASCII tree diagram to clipboard" disabled>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                            </svg>
+                            <span>Copy Tree</span>
                         </button>
                     </div>
-                </section>
+                </div>
+
+                <!-- Table Column Header -->
+                <div class="table-head">
+                    <span>NAME</span>
+                    <span>TYPE</span>
+                    <span>ADDED</span>
+                    <span>REPEATS</span>
+                </div>
+
+                <!-- Tree List Container (Populated dynamically) -->
+                <div class="tree-list" id="tree-container" aria-live="polite">
+                    <!-- Dynamic details/summary rows will be rendered here -->
+                </div>
+
+                <!-- List Footer -->
+                <footer class="list-footer">
+                    <span>
+                        <span class="footer-dot"></span>
+                        Showing <strong id="footer-count">0 items</strong>
+                    </span>
+                </footer>
+            </section>
+
+            <!-- Page Footer -->
+            <footer class="page-footer">
+                <span>MEDIA INDEX <i>·</i> DIRECTORY ANALYZER</span>
+                <span>Organized by source, always.</span>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Reset Confirmation Modal -->
+    <div id="reset-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div class="modal-icon-wrap danger" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path
+                            d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z">
+                        </path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                </div>
+                <h3 id="modal-title" class="modal-title">Reset Database</h3>
             </div>
-
-            <!-- Right Column: Interactive Tree Hierarchy with Enhanced Search -->
-            <div class="workspace-main">
-                <section class="panel-card tree-card" aria-labelledby="tree-heading">
-                    <!-- Tree Header & Title -->
-                    <div class="tree-header-bar">
-                        <div class="tree-title-wrapper">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <line x1="6" y1="3" x2="6" y2="15"></line>
-                                <circle cx="18" cy="6" r="3"></circle>
-                                <circle cx="6" cy="18" r="3"></circle>
-                                <path d="M18 9a9 9 0 0 1-9 9"></path>
-                            </svg>
-                            <h2 id="tree-heading" class="tree-title">Storage Pattern Hierarchy</h2>
-                            <span id="tree-item-count" class="badge-pill">0 files</span>
-                        </div>
-
-                        <!-- Tree Header Global Actions -->
-                        <div class="tree-global-actions">
-                            <button type="button" id="copy-tree-text-btn" class="tree-btn" title="Copy ASCII tree diagram to clipboard">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                                </svg>
-                                <span>Copy Tree</span>
-                            </button>
-
-                            <button type="button" id="expand-all-btn" class="tree-btn" title="Expand all branches">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polyline points="7 11 12 6 17 11"></polyline>
-                                    <polyline points="7 18 12 13 17 18"></polyline>
-                                </svg>
-                                <span>Expand All</span>
-                            </button>
-
-                            <button type="button" id="collapse-all-btn" class="tree-btn" title="Collapse all branches">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polyline points="7 13 12 18 17 13"></polyline>
-                                    <polyline points="7 6 12 11 17 6"></polyline>
-                                </svg>
-                                <span>Collapse All</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Enhanced Search & Filter Toolbar -->
-                    <div class="tree-search-toolbar">
-                        <!-- Primary Search Input -->
-                        <div class="enhanced-search-input-box">
-                            <svg class="search-field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="11" cy="11" r="8"></circle>
-                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                            </svg>
-                            <input 
-                                type="text" 
-                                id="tree-search-input" 
-                                class="enhanced-search-input" 
-                                placeholder="Search domains, directories, filenames, or extensions... (Press / to focus)" 
-                                autocomplete="off"
-                                spellcheck="false"
-                            >
-                            <span id="search-match-count" class="search-match-badge hidden">0 matches</span>
-                            <button type="button" id="clear-search-btn" class="clear-search-btn hidden" title="Clear search (Esc)">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                                </svg>
-                            </button>
-                        </div>
-
-                        <!-- Category Filter Pills -->
-                        <div class="filter-pills-row" role="tablist" aria-label="Media Type Filters">
-                            <button type="button" class="filter-pill active" data-type="all" role="tab" aria-selected="true">
-                                <span>All Media</span>
-                            </button>
-                            <button type="button" class="filter-pill" data-type="image" role="tab" aria-selected="false">
-                                <span class="pill-dot dot-image"></span>
-                                <span>Images</span>
-                            </button>
-                            <button type="button" class="filter-pill" data-type="video" role="tab" aria-selected="false">
-                                <span class="pill-dot dot-video"></span>
-                                <span>Videos</span>
-                            </button>
-                            <button type="button" class="filter-pill" data-type="gif" role="tab" aria-selected="false">
-                                <span class="pill-dot dot-gif"></span>
-                                <span>GIFs</span>
-                            </button>
-                            <button type="button" class="filter-pill pill-duplicate" data-type="duplicates" role="tab" aria-selected="false">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                                    <polyline points="23 4 23 10 17 10"></polyline>
-                                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                                </svg>
-                                <span>Duplicates Only</span>
-                                <span id="filter-dup-count" class="filter-mini-count">0</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Tree Content Hierarchy -->
-                    <div id="tree-container" class="tree-view-wrapper" aria-live="polite">
-                        <!-- Populated dynamically via app.js -->
-                    </div>
-                </section>
+            <div class="modal-body">
+                Are you sure you want to clear all analyzed URLs from your session? This action cannot be undone.
             </div>
-        </main>
+            <div class="modal-actions">
+                <button type="button" id="cancel-reset-btn" class="button button-outline">Cancel</button>
+                <button type="button" id="confirm-reset-btn" class="button button-primary"
+                    style="background: var(--danger); border-color: var(--danger);">Clear Everything</button>
+            </div>
+        </div>
     </div>
 
     <!-- Application Script -->
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
+
 </html>

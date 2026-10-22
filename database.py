@@ -189,6 +189,10 @@ class URLDatabase:
         total_submissions = sum(item.get("count", 1) for item in urls.values())
         duplicate_submissions = total_submissions - total_urls
 
+        IMAGE_EXTS = {"jpg", "jpeg", "png", "webp", "svg", "avif", "bmp", "ico"}
+        VIDEO_EXTS = {"mp4", "webm", "mov", "m4v", "ogv", "avi", "mkv"}
+        GIF_EXTS = {"gif"}
+
         # Tree structure root as a dictionary mapping domain -> domain node
         domains_map = {}
 
@@ -198,7 +202,16 @@ class URLDatabase:
             filename = entry.get("filename", "file")
             url = entry.get("url", "")
             count = entry.get("count", 1)
-            extension = entry.get("extension", "")
+            extension = entry.get("extension", "").lower()
+
+            if extension in GIF_EXTS:
+                media_type = "gif"
+            elif extension in VIDEO_EXTS:
+                media_type = "video"
+            elif extension in IMAGE_EXTS:
+                media_type = "image"
+            else:
+                media_type = "other"
 
             # Ensure domain node exists
             if domain not in domains_map:
@@ -210,11 +223,14 @@ class URLDatabase:
 
             # Traverse or create folder nodes
             current_level = domains_map[domain]["children"]
+            accumulated_path = []
             for seg in path_segments:
+                accumulated_path.append(seg)
                 if seg not in current_level:
                     current_level[seg] = {
                         "name": seg,
                         "type": "folder",
+                        "path": f"/{'/'.join(accumulated_path)}/",
                         "children": {},
                     }
                 current_level = current_level[seg]["children"]
@@ -226,27 +242,72 @@ class URLDatabase:
                 "type": "file",
                 "url": url,
                 "count": count,
-                "extension": extension,
+                "extension": extension.upper() if extension else "FILE",
+                "media_type": media_type,
+                "first_added": entry.get("first_added"),
                 "last_updated": entry.get("last_updated"),
             }
 
-        def convert_dict_to_list(node: dict) -> dict:
-            """Recursively converts 'children' dictionaries to sorted lists."""
+        def process_node(node: dict) -> dict:
+            """Recursively converts 'children' dictionaries to sorted lists and computes aggregations."""
             if "children" in node:
                 children_dict = node["children"]
-                # Convert children
                 converted_children = [
-                    convert_dict_to_list(child) for child in children_dict.values()
+                    process_node(child) for child in children_dict.values()
                 ]
-                # Sort: folders first, then files alphabetically
                 converted_children.sort(
                     key=lambda x: (0 if x["type"] in ("domain", "folder") else 1, x["name"].lower())
                 )
                 node["children"] = converted_children
+
+                # Compute files_count and folders_count for folders/domains
+                files_count = 0
+                folders_count = 0
+                latest_ts = None
+                type_counts = {"image": 0, "video": 0, "gif": 0, "other": 0}
+
+                for child in converted_children:
+                    if child["type"] == "file":
+                        files_count += 1
+                        m_type = child.get("media_type", "other")
+                        type_counts[m_type] = type_counts.get(m_type, 0) + 1
+                        ts = child.get("last_updated") or child.get("first_added")
+                        if ts and (latest_ts is None or ts > latest_ts):
+                            latest_ts = ts
+                    elif child["type"] == "folder":
+                        folders_count += 1 + child.get("folders_count", 0)
+                        files_count += child.get("files_count", 0)
+                        ts = child.get("last_updated")
+                        if ts and (latest_ts is None or ts > latest_ts):
+                            latest_ts = ts
+                        for k, v in child.get("type_counts", {}).items():
+                            type_counts[k] = type_counts.get(k, 0) + v
+
+                node["files_count"] = files_count
+                node["folders_count"] = folders_count
+                node["last_updated"] = latest_ts
+                node["type_counts"] = type_counts
+
+                if node["type"] == "domain":
+                    node["items_count"] = files_count
+                    domain_lower = node["name"].lower()
+                    if "cdn" in domain_lower:
+                        if "design" in domain_lower or "studio" in domain_lower:
+                            node["domain_type"] = "DESIGN CDN"
+                        else:
+                            node["domain_type"] = "CONTENT CDN"
+                        node["domain_color"] = "coral"
+                    elif type_counts.get("video", 0) > type_counts.get("image", 0):
+                        node["domain_type"] = "VIDEO SOURCE"
+                        node["domain_color"] = "blue"
+                    else:
+                        node["domain_type"] = "IMAGE SOURCE"
+                        node["domain_color"] = "violet"
+
             return node
 
         # Build final tree list
-        tree = [convert_dict_to_list(d_node) for d_node in domains_map.values()]
+        tree = [process_node(d_node) for d_node in domains_map.values()]
         tree.sort(key=lambda x: x["name"].lower())
 
         return {
@@ -255,6 +316,7 @@ class URLDatabase:
                 "total_urls": total_urls,
                 "total_submissions": total_submissions,
                 "duplicate_submissions": duplicate_submissions,
+                "total_sources": len(domains_map),
             },
         }
 
