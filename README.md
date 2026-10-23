@@ -1,4 +1,4 @@
-# Media URL Analyzer
+# Media Index / Media URL Analyzer
 
 A lightweight web application built with Python (Flask) and Vanilla JavaScript that parses media URLs (images, GIFs, videos), extracts hierarchical directory patterns, visually displays them in an interactive folder-like tree structure, and tracks duplicate submissions.
 
