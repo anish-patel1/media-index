@@ -100,11 +100,11 @@
                     <input id="url-input" type="url"
                         placeholder="https://images.unsplash.com/photo-1470770841072-f978cf4d019e"
                         aria-label="URL address"
-                        title="Press 'U' to focus, 'Esc' to clear"
+                        title="Press '/' or Alt+U to focus, Esc to clear"
                         autocomplete="off" spellcheck="false" required>
 
                     <!-- Shortcut Hint badge -->
-                    <kbd class="kbd-hint" id="url-kbd-hint" title="Press U to focus">U</kbd>
+                    <kbd class="kbd-hint" id="url-kbd-hint" title="Press / to focus">/</kbd>
 
                     <!-- Quick Clear Button (visible when text is present) -->
                     <button type="button" id="clear-url-btn" class="clear-url-btn" title="Clear input" aria-label="Clear input" style="display: none;">
@@ -133,7 +133,7 @@
                 <div class="capture-foot">
                     <span class="supported">Images <i>·</i> GIFs <i>·</i> Videos</span>
                     <span class="shortcuts-legend" aria-label="Keyboard shortcuts">
-                        <kbd>U</kbd> Focus URL <i>·</i> <kbd>/</kbd> Search <i>·</i> <kbd>Esc</kbd> Clear
+                        <kbd>/</kbd> Focus URL <i>·</i> <kbd>Ctrl+F</kbd> Search <i>·</i> <kbd>Esc</kbd> Clear
                     </span>
                     <span id="capture-status" class="capture-status-text">Direct links to images, videos or GIFs</span>
                 </div>
@@ -156,8 +156,8 @@
                                 <path d="m16 16 4.5 4.5" />
                             </svg>
                             <input type="search" id="tree-search-input" placeholder="Search files..."
-                                aria-label="Search files" title="Press '/' to search, 'Esc' to clear">
-                            <kbd class="kbd-hint" id="search-kbd-hint" title="Press / to search">/</kbd>
+                                aria-label="Search files" title="Press 'Ctrl+F' or 'F3' to search, Esc to clear">
+                            <kbd class="kbd-hint" id="search-kbd-hint" title="Press Ctrl+F to search">Ctrl+F</kbd>
                             <button type="button" id="clear-search-btn" class="clear-search-btn" title="Clear search"
                                 style="display: none;">✕</button>
                         </label>

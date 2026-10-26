@@ -777,16 +777,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // Shortcut: Focus main URL entry textbox (Press 'u' or Alt+U)
-        if ((e.key === 'u' || e.key === 'U') && !isTyping && !e.ctrlKey && !e.metaKey) {
-            e.preventDefault();
-            if (urlInput) {
-                urlInput.focus();
-                urlInput.select();
-            }
-            return;
-        }
-
+        // Shortcut: Focus main URL entry textbox (Alt+U)
         if (e.altKey && (e.key === 'u' || e.key === 'U')) {
             e.preventDefault();
             if (urlInput) {
@@ -796,8 +787,27 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Shortcut: Focus search input (Press '/')
+        // Shortcut: Submit URL when Enter is pressed inside the URL input (non-empty)
+        if (e.key === 'Enter' && document.activeElement === urlInput) {
+            if (urlInput.value.trim()) {
+                e.preventDefault();
+                submitUrl(urlInput.value);
+            }
+            return;
+        }
+
+        // Shortcut: Focus main URL entry textbox (Press '/')
         if (e.key === '/' && !isTyping && !e.ctrlKey && !e.metaKey) {
+            e.preventDefault();
+            if (urlInput) {
+                urlInput.focus();
+                urlInput.select();
+            }
+            return;
+        }
+
+        // Shortcut: Focus tree search input (Ctrl+F or F3)
+        if ((e.key === 'F3' || (e.key === 'f' && e.ctrlKey && !e.metaKey)) && !e.altKey) {
             e.preventDefault();
             if (treeSearchInput && !treeSearchInput.disabled) {
                 treeSearchInput.focus();
