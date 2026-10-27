@@ -173,7 +173,37 @@ class TestURLDatabase(unittest.TestCase):
         self.assertEqual(tree_2["stats"]["total_urls"], 2)
         self.assertEqual(tree_2["stats"]["total_submissions"], 3)
 
+    def test_metadata_lifecycle(self):
+        url = "https://cdn.example.com/images/vector_art.svg"
+        initial_meta = {"size_bytes": 1024, "mime_type": "image/svg+xml"}
+        res = self.db.add_or_increment_url(url, metadata=initial_meta)
+        self.assertEqual(res["entry"]["metadata"]["size_bytes"], 1024)
+
+        # Update metadata via update_url_metadata
+        enrich_meta = {"dimensions": [800, 600], "cdn_provider": "Cloudflare"}
+        updated = self.db.update_url_metadata(url, enrich_meta)
+        self.assertTrue(updated)
+
+        # Verify tree includes all metadata
+        tree = self.db.get_tree()
+        domain_node = tree["tree"][0]
+        file_node = domain_node["children"][0]["children"][0]
+        self.assertEqual(file_node["name"], "vector_art.svg")
+        self.assertEqual(file_node["metadata"]["size_bytes"], 1024)
+        self.assertEqual(file_node["metadata"]["cdn_provider"], "Cloudflare")
+        self.assertEqual(file_node["metadata"]["dimensions"], [800, 600])
+
+    def test_metadata_refines_unknown_media_type(self):
+        # Extensionless CDN URL
+        url = "https://images.unsplash.com/photo-1470770841072"
+        self.db.add_or_increment_url(url, metadata={"mime_type": "image/jpeg", "size_bytes": 45000})
+
+        tree = self.db.get_tree()
+        file_node = tree["tree"][0]["children"][0]
+        self.assertEqual(file_node["media_type"], "image")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

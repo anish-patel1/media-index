@@ -1101,7 +1101,7 @@ kbd {
 .file-row {
   min-height: 40px;
   display: grid;
-  grid-template-columns: 16px 28px minmax(220px, 1fr) 110px 100px 40px;
+  grid-template-columns: 16px 28px minmax(180px, 1fr) auto 90px 40px;
   gap: 8px;
   align-items: center;
   padding: 0 10px;
@@ -1240,6 +1240,47 @@ kbd {
   font-weight: 600;
   white-space: nowrap;
 }
+
+/* Metadata Badges (Size, Dimensions, CDN) */
+.file-meta-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  justify-self: start;
+  flex-wrap: nowrap;
+}
+
+.meta-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+  white-space: nowrap;
+  letter-spacing: -0.2px;
+}
+
+.size-badge {
+  background: #f4f5f8;
+  color: #4b4e67;
+  border: 1px solid #e2e4ed;
+}
+
+.dim-badge {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.cdn-badge {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
 
 /* Empty State */
 .empty-tree-state {

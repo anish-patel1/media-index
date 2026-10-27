@@ -1,9 +1,12 @@
+import asyncio
 import io
 import json
 import os
 from datetime import datetime, timezone
 from flask import Flask, render_template, request, jsonify, Response, send_file, send_from_directory
 from database import URLDatabase
+from enricher import MetadataEnricher
+
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -90,6 +93,77 @@ def add_url():
         return jsonify({
             "status": "error",
             "message": f"An unexpected error occurred: {str(e)}"
+        }), 500
+
+
+@app.route("/api/enrich", methods=["POST"])
+def enrich_media():
+    """Extracts Content-Length, Content-Type, dimensions, and CDN headers
+    via lightweight async HEAD/ranged GET requests, and updates stored database entries.
+    """
+    if not request.is_json:
+        return jsonify({
+            "status": "error",
+            "message": "Content-Type must be application/json."
+        }), 400
+
+    payload = request.get_json(silent=True) or {}
+    raw_url = payload.get("url")
+    raw_urls = payload.get("urls")
+    update_db = payload.get("update_db", True)
+    extract_dim = payload.get("extract_dimensions", True)
+    user_id = get_user_id()
+
+    if not raw_url and not raw_urls:
+        return jsonify({
+            "status": "error",
+            "message": "Missing 'url' or 'urls' in request payload."
+        }), 400
+
+    async def _do_enrich():
+        async with MetadataEnricher() as enricher:
+            if raw_url:
+                if not isinstance(raw_url, str) or not raw_url.strip():
+                    raise ValueError("URL must be a non-empty string.")
+                return await enricher.enrich_url(raw_url, extract_dimensions=extract_dim)
+            else:
+                if not isinstance(raw_urls, list):
+                    raise ValueError("'urls' must be a list of URL strings.")
+                clean_list = [str(u).strip() for u in raw_urls if str(u).strip()]
+                return await enricher.enrich_batch(clean_list)
+
+    try:
+        result = asyncio.run(_do_enrich())
+
+        if raw_url:
+            db_updated = False
+            if update_db and not result.get("error"):
+                db_updated = db.update_url_metadata(raw_url, result, user_id=user_id)
+            return jsonify({
+                "status": "success",
+                "metadata": result,
+                "db_updated": db_updated,
+            }), 200
+        else:
+            if update_db and isinstance(result, list):
+                for item in result:
+                    if isinstance(item, dict) and not item.get("error") and item.get("url"):
+                        db.update_url_metadata(item["url"], item, user_id=user_id)
+            return jsonify({
+                "status": "success",
+                "results": result,
+                "count": len(result),
+            }), 200
+
+    except ValueError as ve:
+        return jsonify({
+            "status": "error",
+            "message": str(ve)
+        }), 400
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Enrichment failed: {str(e)}"
         }), 500
 
 

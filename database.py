@@ -137,7 +137,7 @@ class URLDatabase:
             "query": parsed.query,
         }
 
-    def add_or_increment_url(self, raw_url: str, user_id: str = "default") -> dict:
+    def add_or_increment_url(self, raw_url: str, user_id: str = "default", metadata: dict = None) -> dict:
         """Adds a URL to the user's database or increments its count if already registered.
         Returns details about the processed entry and duplicate status.
         """
@@ -153,6 +153,8 @@ class URLDatabase:
             entry = urls[normalized_url]
             entry["count"] = entry.get("count", 1) + 1
             entry["last_updated"] = now_iso
+            if metadata and isinstance(metadata, dict):
+                entry.setdefault("metadata", {}).update(metadata)
             is_duplicate = True
         else:
             # Create new entry
@@ -165,6 +167,7 @@ class URLDatabase:
                 "count": 1,
                 "first_added": now_iso,
                 "last_updated": now_iso,
+                "metadata": metadata if isinstance(metadata, dict) else {},
             }
             urls[normalized_url] = entry
             is_duplicate = False
@@ -177,6 +180,32 @@ class URLDatabase:
             "count": entry["count"],
             "entry": entry,
         }
+
+    def update_url_metadata(self, raw_url: str, metadata: dict, user_id: str = "default") -> bool:
+        """Attaches or updates enriched metadata for an existing URL in the user's database.
+        Returns True if the URL was found and updated, False otherwise.
+        """
+        if not metadata or not isinstance(metadata, dict):
+            return False
+
+        try:
+            parsed_info = self.parse_url(raw_url)
+            normalized_url = parsed_info["normalized_url"]
+        except ValueError:
+            normalized_url = raw_url.strip()
+
+        data = self._load()
+        _, urls = self._resolve_user_urls(data, user_id, auto_claim=True)
+
+        if normalized_url in urls:
+            entry = urls[normalized_url]
+            current_meta = entry.setdefault("metadata", {})
+            current_meta.update(metadata)
+            entry["last_updated"] = datetime.now(timezone.utc).isoformat()
+            self._save(data)
+            return True
+        return False
+
 
     def get_tree(self, user_id: str = "default") -> dict:
         """Reconstructs stored URLs for a specific user into a hierarchical folder-like tree
@@ -235,6 +264,19 @@ class URLDatabase:
                     }
                 current_level = current_level[seg]["children"]
 
+            # Refine media_type using enriched MIME type if available
+            metadata = entry.get("metadata", {})
+            if media_type == "other" and isinstance(metadata, dict):
+                mime = metadata.get("mime_type", "").lower()
+                if "image" in mime:
+                    media_type = "image"
+                elif "video" in mime:
+                    media_type = "video"
+                elif "audio" in mime:
+                    media_type = "audio"
+                elif "gif" in mime:
+                    media_type = "gif"
+
             # Add file node
             file_key = f"__file__{filename}__{url}"
             current_level[file_key] = {
@@ -246,6 +288,7 @@ class URLDatabase:
                 "media_type": media_type,
                 "first_added": entry.get("first_added"),
                 "last_updated": entry.get("last_updated"),
+                "metadata": metadata if isinstance(metadata, dict) else {},
             }
 
         def process_node(node: dict) -> dict:
@@ -396,6 +439,8 @@ class URLDatabase:
                 existing["count"] = max(existing.get("count", 1), imp_count)
                 if imp_last > existing.get("last_updated", ""):
                     existing["last_updated"] = imp_last
+                if "metadata" in entry and isinstance(entry["metadata"], dict):
+                    existing.setdefault("metadata", {}).update(entry["metadata"])
                 merged_count += 1
             else:
                 urls[url_key] = {
@@ -406,7 +451,8 @@ class URLDatabase:
                     "extension": entry.get("extension") or parsed_meta["extension"],
                     "count": imp_count,
                     "first_added": imp_first,
-                    "last_updated": imp_last
+                    "last_updated": imp_last,
+                    "metadata": entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {},
                 }
                 imported_count += 1
 

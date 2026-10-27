@@ -151,7 +151,71 @@ class TestAppRoutes(unittest.TestCase):
         res = self.client.get("/favicon.ico")
         self.assertEqual(res.status_code, 200)
 
+    def test_enrich_endpoint_validation(self):
+        # Empty payload
+        res = self.client.post("/api/enrich", json={})
+        self.assertEqual(res.status_code, 400)
+
+        # Non-JSON payload
+        res2 = self.client.post("/api/enrich", data="not json")
+        self.assertEqual(res2.status_code, 400)
+
+    def test_enrich_endpoint_single_url(self):
+        from unittest.mock import patch
+
+        # First add URL to database
+        url = "https://cdn.example.com/nature/mountain.jpg"
+        self.client.post("/api/urls", json={"url": url})
+
+        mock_enrich_data = {
+            "url": url,
+            "final_url": url,
+            "status_code": 200,
+            "size_bytes": 1048576,
+            "mime_type": "image/jpeg",
+            "dimensions": [1920, 1080],
+            "last_modified": "Wed, 21 Oct 2026 07:28:00 GMT",
+            "cdn_provider": "Cloudflare",
+            "etag": "abc12345",
+        }
+
+        with patch("enricher.MetadataEnricher.enrich_url") as mock_enrich:
+            mock_enrich.return_value = mock_enrich_data
+
+            res = self.client.post("/api/enrich", json={"url": url, "update_db": True})
+            self.assertEqual(res.status_code, 200)
+            data = res.get_json()
+            self.assertEqual(data["status"], "success")
+            self.assertEqual(data["metadata"]["size_bytes"], 1048576)
+            self.assertTrue(data["db_updated"])
+
+            # Verify database tree now has metadata
+            tree_res = self.client.get("/api/tree")
+            tree_data = tree_res.get_json()
+            file_node = tree_data["tree"][0]["children"][0]["children"][0]
+            self.assertEqual(file_node["metadata"]["dimensions"], [1920, 1080])
+            self.assertEqual(file_node["metadata"]["cdn_provider"], "Cloudflare")
+
+    def test_enrich_endpoint_batch_urls(self):
+        from unittest.mock import patch
+
+        urls = ["https://site.com/a.jpg", "https://site.com/b.png"]
+        mock_batch_data = [
+            {"url": urls[0], "size_bytes": 500, "mime_type": "image/jpeg"},
+            {"url": urls[1], "size_bytes": 900, "mime_type": "image/png"},
+        ]
+
+        with patch("enricher.MetadataEnricher.enrich_batch") as mock_batch:
+            mock_batch.return_value = mock_batch_data
+
+            res = self.client.post("/api/enrich", json={"urls": urls})
+            self.assertEqual(res.status_code, 200)
+            data = res.get_json()
+            self.assertEqual(data["status"], "success")
+            self.assertEqual(data["count"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

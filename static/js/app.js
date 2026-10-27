@@ -176,6 +176,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function formatBytes(bytes) {
+        if (!bytes || isNaN(bytes) || bytes <= 0) return '';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        let i = 0;
+        let val = Number(bytes);
+        while (val >= 1024 && i < units.length - 1) {
+            val /= 1024;
+            i++;
+        }
+        return `${val < 10 && i > 0 ? val.toFixed(1) : Math.round(val)} ${units[i]}`;
+    }
+
     // -------------------------------------------------------------
     // 5. Tree Rendering Engine
     // -------------------------------------------------------------
@@ -291,6 +303,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 const mType = node.media_type || 'image';
                 const timeText = formatTimeAgo(node.last_updated || node.first_added);
                 const truncated = truncateUrl(node.url);
+                const meta = node.metadata || {};
+
+                // Badges for enriched metadata (size, dimensions, CDN)
+                let metaBadgesHtml = '';
+                if (meta.size_bytes && !isNaN(meta.size_bytes) && Number(meta.size_bytes) > 0) {
+                    metaBadgesHtml += `<span class="meta-badge size-badge" title="Size: ${Number(meta.size_bytes).toLocaleString()} bytes">${formatBytes(meta.size_bytes)}</span>`;
+                }
+                if (meta.dimensions && Array.isArray(meta.dimensions) && meta.dimensions.length === 2) {
+                    metaBadgesHtml += `<span class="meta-badge dim-badge" title="Resolution: ${meta.dimensions[0]} × ${meta.dimensions[1]} px">${meta.dimensions[0]}×${meta.dimensions[1]}</span>`;
+                }
+                if (meta.cdn_provider) {
+                    metaBadgesHtml += `<span class="meta-badge cdn-badge" title="CDN / Host: ${escapeHtml(meta.cdn_provider)}">${escapeHtml(meta.cdn_provider)}</span>`;
+                }
 
                 let iconHtml = SVG_ICONS.image;
                 let iconClass = 'image-icon';
@@ -332,7 +357,10 @@ document.addEventListener('DOMContentLoaded', () => {
                             </a>
                             <small title="${escapeHtml(node.url)}">${escapeHtml(truncated)}</small>
                         </span>
-                        <span class="type-chip ${chipClass}">${escapeHtml(ext)}</span>
+                        <div class="file-meta-group">
+                            ${metaBadgesHtml}
+                            <span class="type-chip ${chipClass}">${escapeHtml(ext)}</span>
+                        </div>
                         <span class="row-meta">${escapeHtml(timeText)}</span>
                         ${repeatsBadge}
                     </div>
@@ -476,6 +504,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 await loadTreeData();
                 if (captureStatus) captureStatus.textContent = 'Structure updated successfully';
+
+                // Silent background enrichment: probe size, MIME, dimensions, and CDN
+                authFetch('/api/enrich', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: cleanUrl, update_db: true })
+                })
+                    .then(res => res.json())
+                    .then(enrichData => {
+                        if (enrichData && enrichData.status === 'success' && enrichData.db_updated) {
+                            loadTreeData();
+                        }
+                    })
+                    .catch(err => {
+                        console.debug('Background enrichment silent error:', err);
+                    });
             } else {
                 showToast('Submission Failed', data.message || 'Could not analyze URL.', 'error');
                 if (captureStatus) captureStatus.textContent = data.message || 'Error parsing URL';
