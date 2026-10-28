@@ -49,7 +49,7 @@
 
                 <!-- Import Backup Button (Arrow pointing down/in) -->
                 <button type="button" id="import-btn" class="button button-outline"
-                    title="Import database from JSON file">
+                    title="Import database from JSON, CSV, XML, or TXT file">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                         <polyline points="7 10 12 15 17 10"></polyline>
@@ -57,7 +57,7 @@
                     </svg>
                     <span>Import</span>
                 </button>
-                <input type="file" id="import-file-input" accept=".json,application/json" style="display: none;">
+                <input type="file" id="import-file-input" accept=".json,.csv,.xml,.txt,text/csv,text/plain,application/xml,text/xml,application/json" style="display: none;">
 
                 <!-- Reset Database Button -->
                 <button type="button" id="reset-db-btn" class="button button-danger-subtle"
@@ -329,6 +329,75 @@
                 <button type="button" id="cancel-reset-btn" class="button button-outline">Cancel</button>
                 <button type="button" id="confirm-reset-btn" class="button button-primary"
                     style="background: var(--danger); border-color: var(--danger);">Clear Everything</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Global Drag-and-Drop Import Overlay -->
+    <div id="drag-drop-overlay" class="drag-drop-overlay" aria-hidden="true">
+        <div class="drag-drop-card">
+            <div class="drag-drop-icon">
+                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+            </div>
+            <h3 class="drag-drop-title">Drop file to import URLs</h3>
+            <p class="drag-drop-subtitle">Supports JSON backups, CSV spreadsheets, XML sitemaps, and plain text</p>
+            <div class="drag-drop-formats">
+                <span class="format-pill">.JSON</span>
+                <span class="format-pill">.CSV</span>
+                <span class="format-pill">.XML</span>
+                <span class="format-pill">.TXT</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Preview-Before-Commit Modal -->
+    <div id="import-preview-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
+        <div class="modal-card modal-card-wide">
+            <div class="modal-header">
+                <div class="modal-icon-wrap primary" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                </div>
+                <div>
+                    <h3 id="import-modal-title" class="modal-title">Import Preview</h3>
+                    <p id="import-modal-subtitle" class="modal-subtitle">links.csv &bull; CSV Format</p>
+                </div>
+            </div>
+
+            <div class="import-stats-grid">
+                <div class="import-stat-card">
+                    <span class="stat-num" id="import-total-found">0</span>
+                    <span class="stat-label">Total Found</span>
+                </div>
+                <div class="import-stat-card highlight-new">
+                    <span class="stat-num" id="import-new-count">0</span>
+                    <span class="stat-label">New URLs</span>
+                </div>
+                <div class="import-stat-card highlight-dup">
+                    <span class="stat-num" id="import-dup-count">0</span>
+                    <span class="stat-label">Duplicates</span>
+                </div>
+            </div>
+
+            <div class="modal-body" style="margin-bottom: 8px;">
+                <p style="margin-bottom: 8px; font-weight: 600; color: var(--ink);">Previewing extracted URLs:</p>
+                <div id="import-preview-list" class="import-preview-list" role="list">
+                    <!-- Populated dynamically via JS -->
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" id="cancel-import-btn" class="button button-outline">Cancel</button>
+                <button type="button" id="confirm-import-btn" class="button button-primary">
+                    <span id="confirm-import-text">Import All URLs</span>
+                </button>
             </div>
         </div>
     </div>

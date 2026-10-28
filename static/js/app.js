@@ -62,6 +62,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const importBtn = document.getElementById('import-btn');
     const importFileInput = document.getElementById('import-file-input');
 
+    // Import Preview Modal & Drag-Drop Overlay
+    const dragDropOverlay = document.getElementById('drag-drop-overlay');
+    const importPreviewModal = document.getElementById('import-preview-modal');
+    const importModalSubtitle = document.getElementById('import-modal-subtitle');
+    const importTotalFound = document.getElementById('import-total-found');
+    const importNewCount = document.getElementById('import-new-count');
+    const importDupCount = document.getElementById('import-dup-count');
+    const importPreviewList = document.getElementById('import-preview-list');
+    const cancelImportBtn = document.getElementById('cancel-import-btn');
+    const confirmImportBtn = document.getElementById('confirm-import-btn');
+    const confirmImportText = document.getElementById('confirm-import-text');
+
     // Reset Modal
     const resetDbBtn = document.getElementById('reset-db-btn');
     const resetModal = document.getElementById('reset-modal');
@@ -1202,19 +1214,138 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // -------------------------------------------------------------
+    // 9. Bulk Import Pipeline (JSON, CSV, XML, TXT with Preview)
+    // -------------------------------------------------------------
+    let pendingImportFile = null;
+
+    function openImportPreviewModal(file, previewData) {
+        pendingImportFile = file;
+        if (importModalSubtitle) {
+            importModalSubtitle.textContent = `${file.name} • ${(previewData.format || 'file').toUpperCase()}`;
+        }
+        if (importTotalFound) {
+            importTotalFound.textContent = previewData.total_found ?? (previewData.urls ? previewData.urls.length : 0);
+        }
+        if (importNewCount) {
+            importNewCount.textContent = previewData.new_count ?? 0;
+        }
+        if (importDupCount) {
+            importDupCount.textContent = previewData.duplicate_count ?? 0;
+        }
+        if (confirmImportText) {
+            confirmImportText.textContent = `Import All (${previewData.total_found ?? 0} URLs)`;
+        }
+
+        if (importPreviewList) {
+            importPreviewList.innerHTML = '';
+            const urls = previewData.urls || [];
+            if (urls.length === 0) {
+                importPreviewList.innerHTML = '<div style="padding: 12px; text-align: center; color: var(--sub); font-size: 12px;">No preview items available.</div>';
+            } else {
+                urls.forEach(item => {
+                    const row = document.createElement('div');
+                    row.className = 'import-preview-item';
+
+                    const urlSpan = document.createElement('span');
+                    urlSpan.className = 'import-preview-url';
+                    urlSpan.textContent = typeof item === 'string' ? item : (item.url || '');
+                    urlSpan.title = urlSpan.textContent;
+
+                    const tagSpan = document.createElement('span');
+                    const isDup = typeof item === 'object' && item.is_duplicate;
+                    tagSpan.className = `import-tag ${isDup ? 'tag-dup' : 'tag-new'}`;
+                    tagSpan.textContent = isDup ? 'DUPLICATE' : 'NEW';
+
+                    row.appendChild(urlSpan);
+                    row.appendChild(tagSpan);
+                    importPreviewList.appendChild(row);
+                });
+
+                if (previewData.total_found && previewData.total_found > urls.length) {
+                    const moreDiv = document.createElement('div');
+                    moreDiv.style.cssText = 'padding: 6px; text-align: center; color: var(--sub); font-size: 11px; font-style: italic;';
+                    moreDiv.textContent = `... and ${previewData.total_found - urls.length} more URLs`;
+                    importPreviewList.appendChild(moreDiv);
+                }
+            }
+        }
+
+        if (importPreviewModal) {
+            importPreviewModal.classList.add('active');
+        }
+    }
+
+    function closeImportPreviewModal() {
+        if (importPreviewModal) {
+            importPreviewModal.classList.remove('active');
+        }
+        pendingImportFile = null;
+        if (importFileInput) importFileInput.value = '';
+    }
+
+    async function handleImportFile(file) {
+        if (!file) return;
+
+        const allowedExts = ['.json', '.csv', '.xml', '.txt'];
+        const nameLower = file.name.toLowerCase();
+        const hasValidExt = allowedExts.some(ext => nameLower.endsWith(ext));
+
+        if (!hasValidExt && !['application/json', 'text/csv', 'application/xml', 'text/xml', 'text/plain'].includes(file.type)) {
+            showToast('Unsupported File', 'Please select a .json, .csv, .xml, or .txt file.', 'error');
+            return;
+        }
+
+        showToast('Analyzing File', `Scanning ${file.name} for URLs...`, 'info', 2000);
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const response = await authFetch('/api/import?preview=true', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+            if (response.ok && (data.status === 'preview' || data.status === 'success')) {
+                openImportPreviewModal(file, data);
+            } else {
+                showToast('Import Error', data.message || 'Could not parse import file.', 'error');
+            }
+        } catch (err) {
+            console.error('Import preview error:', err);
+            showToast('Import Error', 'Failed to inspect file.', 'error');
+        }
+    }
+
     if (importBtn && importFileInput) {
         importBtn.addEventListener('click', () => {
             importFileInput.value = '';
             importFileInput.click();
         });
 
-        importFileInput.addEventListener('change', async (e) => {
+        importFileInput.addEventListener('change', (e) => {
             const file = e.target.files && e.target.files[0];
-            if (!file) return;
+            if (file) handleImportFile(file);
+        });
+    }
 
-            showToast('Importing Data', `Parsing ${file.name}...`, 'info', 2500);
+    if (cancelImportBtn) {
+        cancelImportBtn.addEventListener('click', closeImportPreviewModal);
+    }
+
+    if (confirmImportBtn) {
+        confirmImportBtn.addEventListener('click', async () => {
+            if (!pendingImportFile) {
+                closeImportPreviewModal();
+                return;
+            }
+
+            confirmImportBtn.disabled = true;
+            if (confirmImportText) confirmImportText.textContent = 'Importing...';
+
             const formData = new FormData();
-            formData.append('file', file);
+            formData.append('file', pendingImportFile);
 
             try {
                 const response = await authFetch('/api/import', {
@@ -1223,20 +1354,72 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
 
                 const data = await response.json();
+                closeImportPreviewModal();
+
                 if (response.ok && data.status === 'success') {
+                    const imported = data.imported_count ?? data.imported ?? 0;
+                    const merged = data.duplicate_count ?? data.merged ?? 0;
                     showToast(
                         'Import Successful',
-                        `Imported ${data.imported_count || 0} URLs (${data.duplicate_count || 0} duplicates merged).`,
+                        `Imported ${imported} URLs (${merged} duplicates merged).`,
                         'success'
                     );
                     await loadTreeData();
                 } else {
-                    showToast('Import Failed', data.message || 'Invalid backup file.', 'error');
+                    showToast('Import Failed', data.message || 'Error executing import.', 'error');
                 }
             } catch (err) {
-                console.error('Import error:', err);
-                showToast('Import Error', 'Failed to upload backup JSON.', 'error');
+                console.error('Import execution error:', err);
+                closeImportPreviewModal();
+                showToast('Import Error', 'Failed to complete import.', 'error');
+            } finally {
+                confirmImportBtn.disabled = false;
+                if (confirmImportText) confirmImportText.textContent = 'Import All URLs';
             }
+        });
+    }
+
+    // Global Drag & Drop Handlers
+    if (dragDropOverlay) {
+        let dragCounter = 0;
+
+        window.addEventListener('dragenter', (e) => {
+            if (e.dataTransfer && e.dataTransfer.types && Array.from(e.dataTransfer.types).includes('Files')) {
+                dragCounter++;
+                dragDropOverlay.classList.add('active');
+            }
+        });
+
+        window.addEventListener('dragleave', (e) => {
+            dragCounter--;
+            if (dragCounter <= 0) {
+                dragCounter = 0;
+                dragDropOverlay.classList.remove('active');
+            }
+        });
+
+        window.addEventListener('dragover', (e) => {
+            e.preventDefault();
+        });
+
+        dragDropOverlay.addEventListener('dragover', (e) => {
+            e.preventDefault();
+        });
+
+        dragDropOverlay.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dragCounter = 0;
+            dragDropOverlay.classList.remove('active');
+
+            if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                handleImportFile(e.dataTransfer.files[0]);
+            }
+        });
+    }
+
+    if (importPreviewModal) {
+        importPreviewModal.addEventListener('click', (e) => {
+            if (e.target === importPreviewModal) closeImportPreviewModal();
         });
     }
 
@@ -1298,6 +1481,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // 1. Close Modal if active
+            if (importPreviewModal && importPreviewModal.classList.contains('active')) {
+                closeImportPreviewModal();
+                return;
+            }
             if (resetModal && resetModal.classList.contains('active')) {
                 closeResetModal();
                 return;

@@ -1,7 +1,10 @@
 import asyncio
+import csv
 import io
 import json
 import os
+import re
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from flask import Flask, render_template, request, jsonify, Response, send_file, send_from_directory
 from database import URLDatabase
@@ -255,12 +258,149 @@ def export_data():
         }), 500
 
 
+def _extract_urls_from_csv(text_content: str) -> list:
+    """Sweeps all rows and cells in a CSV string using csv.reader,
+    extracting any HTTP/HTTPS URLs via regex.
+    """
+    url_pattern = re.compile(r'https?://[^\s,"\'<>]+')
+    extracted = []
+    reader = csv.reader(io.StringIO(text_content))
+    for row in reader:
+        for cell in row:
+            if cell:
+                found = url_pattern.findall(cell)
+                for u in found:
+                    cleaned = u.rstrip(".,;)]")
+                    if cleaned:
+                        extracted.append(cleaned)
+    return extracted
+
+
+def _extract_urls_from_xml(text_content: str) -> list:
+    """Parses XML sitemaps or feeds, extracting URLs from <loc>, <image:loc>,
+    <video:content_loc>, <enclosure>, and any element text or attributes containing HTTP/HTTPS URLs.
+    Falls back gracefully to regex sweeping if XML is slightly malformed.
+    """
+    url_pattern = re.compile(r'https?://[^\s,"\'<>]+')
+    extracted = []
+    seen = set()
+
+    def add_if_valid(candidate: str):
+        if not candidate:
+            return
+        found = url_pattern.findall(candidate)
+        for u in found:
+            cleaned = u.rstrip(".,;)]")
+            if cleaned and cleaned not in seen:
+                seen.add(cleaned)
+                extracted.append(cleaned)
+
+    try:
+        root = ET.fromstring(text_content)
+        for elem in root.iter():
+            # Check element text (e.g. <loc>, <image:loc>)
+            if elem.text and elem.text.strip():
+                add_if_valid(elem.text.strip())
+            # Check attributes (e.g. <enclosure url="..."> or <link href="...">)
+            for attr_val in elem.attrib.values():
+                if attr_val and isinstance(attr_val, str):
+                    add_if_valid(attr_val.strip())
+    except ET.ParseError:
+        # Fallback to regex scan if XML has minor syntax issues or namespaces
+        for u in url_pattern.findall(text_content):
+            cleaned = u.rstrip(".,;)]")
+            if cleaned and cleaned not in seen:
+                seen.add(cleaned)
+                extracted.append(cleaned)
+
+    return extracted
+
+
+def _extract_urls_from_text(text_content: str) -> list:
+    """Extracts all HTTP/HTTPS URLs from plain text or multiline logs,
+    stripping trailing punctuation and deduplicating while preserving order.
+    """
+    url_pattern = re.compile(r'https?://[^\s,"\'<>]+')
+    extracted = []
+    seen = set()
+    for u in url_pattern.findall(text_content):
+        cleaned = u.rstrip(".,;)]")
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            extracted.append(cleaned)
+    return extracted
+
+
+def _process_url_batch(urls: list, user_id: str, preview: bool = False, format_type: str = "csv") -> tuple:
+    """Processes or previews a list of extracted URLs for a user."""
+    if not urls:
+        return {
+            "status": "error",
+            "message": f"No valid HTTP/HTTPS URLs found in uploaded {format_type.upper()}."
+        }, 400
+
+    if preview:
+        data = db._load()
+        _, existing_urls = db._resolve_user_urls(data, user_id, auto_claim=False)
+        preview_items = []
+        new_count = 0
+        merged_count = 0
+        for u in urls:
+            try:
+                parsed = db.parse_url(u)
+                norm_url = parsed.get("normalized_url", u)
+                is_dup = norm_url in existing_urls
+                if is_dup:
+                    merged_count += 1
+                else:
+                    new_count += 1
+                preview_items.append({"url": norm_url, "is_duplicate": is_dup})
+            except (ValueError, KeyError):
+                continue
+
+        return {
+            "status": "preview",
+            "format": format_type,
+            "total_found": len(urls),
+            "new_count": new_count,
+            "duplicate_count": merged_count,
+            "urls": preview_items[:100]
+        }, 200
+
+    imported_count = 0
+    merged_count = 0
+    failed_count = 0
+    for u in urls:
+        try:
+            res = db.add_or_increment_url(u, user_id=user_id)
+            if res.get("is_duplicate"):
+                merged_count += 1
+            else:
+                imported_count += 1
+        except ValueError:
+            failed_count += 1
+            continue
+
+    return {
+        "status": "success",
+        "format": format_type,
+        "imported": imported_count,
+        "merged": merged_count,
+        "failed": failed_count,
+        "total_processed": imported_count + merged_count
+    }, 200
+
+
 @app.route("/api/import", methods=["POST"])
 def import_data():
-    """Imports URLs into the caller's database from an uploaded JSON file or body."""
+    """Imports URLs into the caller's database from uploaded JSON, CSV, XML, TXT, or raw payloads.
+    Supports preview mode via ?preview=true.
+    """
     user_id = get_user_id()
+    preview_mode = request.args.get("preview", "").strip().lower() in ("true", "1", "yes")
+
     try:
-        import_payload = None
+        # 1. Multipart Form File Upload
         if "file" in request.files:
             uploaded_file = request.files["file"]
             if not uploaded_file.filename:
@@ -268,19 +408,99 @@ def import_data():
                     "status": "error",
                     "message": "No file selected for upload."
                 }), 400
-            file_content = uploaded_file.read().decode("utf-8")
+
+            filename_lower = uploaded_file.filename.lower()
+            raw_bytes = uploaded_file.read()
+            file_content = raw_bytes.decode("utf-8-sig", errors="replace")
+
+            # Check if CSV by extension or mimetype
+            is_csv = (
+                filename_lower.endswith(".csv") or
+                uploaded_file.mimetype in ("text/csv", "application/csv", "application/vnd.ms-excel")
+            )
+            # Check if XML by extension or mimetype
+            is_xml = (
+                filename_lower.endswith(".xml") or
+                uploaded_file.mimetype in ("application/xml", "text/xml")
+            )
+            # Check if TXT by extension or mimetype
+            is_txt = (
+                filename_lower.endswith(".txt") or
+                uploaded_file.mimetype == "text/plain"
+            )
+
+            if is_csv:
+                urls = _extract_urls_from_csv(file_content)
+                payload, code = _process_url_batch(urls, user_id, preview=preview_mode, format_type="csv")
+                return jsonify(payload), code
+            elif is_xml:
+                urls = _extract_urls_from_xml(file_content)
+                payload, code = _process_url_batch(urls, user_id, preview=preview_mode, format_type="xml")
+                return jsonify(payload), code
+            elif is_txt:
+                urls = _extract_urls_from_text(file_content)
+                payload, code = _process_url_batch(urls, user_id, preview=preview_mode, format_type="text")
+                return jsonify(payload), code
+
+            # Otherwise, treat as JSON
             import_payload = json.loads(file_content)
+
+        # 2. Direct POST with text/csv
+        elif request.content_type and "text/csv" in request.content_type:
+            raw_text = request.get_data(as_text=True)
+            urls = _extract_urls_from_csv(raw_text)
+            payload, code = _process_url_batch(urls, user_id, preview=preview_mode, format_type="csv")
+            return jsonify(payload), code
+
+        # 3. Direct POST with application/xml or text/xml
+        elif request.content_type and any(t in request.content_type for t in ("application/xml", "text/xml")):
+            raw_text = request.get_data(as_text=True)
+            urls = _extract_urls_from_xml(raw_text)
+            payload, code = _process_url_batch(urls, user_id, preview=preview_mode, format_type="xml")
+            return jsonify(payload), code
+
+        # 4. Direct POST with text/plain
+        elif request.content_type and "text/plain" in request.content_type:
+            raw_text = request.get_data(as_text=True)
+            urls = _extract_urls_from_text(raw_text)
+            payload, code = _process_url_batch(urls, user_id, preview=preview_mode, format_type="text")
+            return jsonify(payload), code
+
+        # 5. Direct JSON Body
         elif request.is_json:
             import_payload = request.get_json(silent=True)
+            if isinstance(import_payload, dict) and import_payload.get("preview"):
+                preview_mode = True
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Unsupported content type. Upload a .json/.csv/.xml/.txt file or provide JSON/CSV/XML/TXT content."
+            }), 400
 
         if not import_payload:
             return jsonify({
                 "status": "error",
-                "message": "No JSON data provided. Please upload a JSON file or post JSON content."
+                "message": "No data provided. Please upload a file or provide payload content."
             }), 400
+
+        # Handle JSON preview mode if requested
+        if preview_mode:
+            urls_map = import_payload.get("urls") if isinstance(import_payload, dict) else None
+            if urls_map is None and isinstance(import_payload, dict):
+                urls_map = import_payload
+            raw_url_list = []
+            if isinstance(urls_map, dict):
+                for k, v in urls_map.items():
+                    if isinstance(v, dict):
+                        raw_url_list.append(v.get("url") or k)
+                    elif isinstance(v, str):
+                        raw_url_list.append(v)
+            payload, code = _process_url_batch(raw_url_list, user_id, preview=True, format_type="json")
+            return jsonify(payload), code
 
         result = db.import_data(import_payload, user_id=user_id)
         return jsonify(result), 200
+
     except json.JSONDecodeError:
         return jsonify({
             "status": "error",

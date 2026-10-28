@@ -1735,6 +1735,222 @@ mark.search-highlight {
   gap: 10px;
 }
 
+.modal-card-wide {
+  max-width: 540px;
+}
+
+.modal-icon-wrap.primary {
+  background: rgba(101, 88, 221, 0.12);
+  color: var(--primary);
+}
+
+.modal-subtitle {
+  font-size: 12px;
+  color: var(--sub);
+  margin: 2px 0 0;
+}
+
+/* Import Stats Cards */
+.import-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.import-stat-card {
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.import-stat-card .stat-num {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+  font-feature-settings: "tnum";
+}
+
+.import-stat-card .stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--sub);
+  font-weight: 600;
+}
+
+.import-stat-card.highlight-new {
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+.import-stat-card.highlight-new .stat-num {
+  color: #059669;
+}
+
+.import-stat-card.highlight-dup {
+  background: rgba(101, 88, 221, 0.08);
+  border-color: rgba(101, 88, 221, 0.25);
+}
+.import-stat-card.highlight-dup .stat-num {
+  color: var(--primary);
+}
+
+/* Import Preview URL List */
+.import-preview-list {
+  max-height: 170px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: #fbfbfc;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.import-preview-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #ffffff;
+  font-size: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.import-preview-url {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.import-tag {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  letter-spacing: 0.03em;
+}
+
+.import-tag.tag-new {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+}
+
+.import-tag.tag-dup {
+  background: rgba(101, 88, 221, 0.12);
+  color: var(--primary);
+}
+
+/* ==========================================================================
+   Global Drag-and-Drop Overlay
+   ========================================================================== */
+.drag-drop-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(18, 19, 34, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.drag-drop-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.drag-drop-card {
+  background: #ffffff;
+  border: 2px dashed var(--primary);
+  border-radius: var(--radius-xl);
+  padding: 40px 32px;
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 24px 60px rgba(101, 88, 221, 0.25);
+  transform: scale(0.94);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.drag-drop-overlay.active .drag-drop-card {
+  transform: scale(1);
+}
+
+.drag-drop-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 20px;
+  background: rgba(101, 88, 221, 0.1);
+  color: var(--primary);
+  display: grid;
+  place-items: center;
+  animation: pulse-bounce 2s infinite ease-in-out;
+}
+
+@keyframes pulse-bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.drag-drop-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+}
+
+.drag-drop-subtitle {
+  font-size: 13px;
+  color: var(--sub);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.drag-drop-formats {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.format-pill {
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
 /* ==========================================================================
    Floating Hover Preview Card
    ========================================================================== */

@@ -1,8 +1,9 @@
-import os
-import unittest
-import tempfile
-import shutil
+import io
 import json
+import os
+import shutil
+import tempfile
+import unittest
 
 # Set test database path before importing app
 temp_dir = tempfile.mkdtemp()
@@ -233,6 +234,212 @@ class TestAppRoutes(unittest.TestCase):
         self.assertIn('id="preview-dim-badge"', html)
         self.assertIn('id="preview-copy-btn"', html)
         self.assertIn('id="preview-open-link"', html)
+
+    def test_import_csv_file_upload(self):
+        csv_data = (
+            "id,name,media_url,notes\n"
+            '1,Hero Banner,"https://example.com/assets/banner.jpg",primary banner\n'
+            '2,Logo,"https://example.com/images/logo.png",main logo\n'
+            '3,Duplicate Hero,"https://example.com/assets/banner.jpg",repeat\n'
+        )
+        data = {
+            "file": (io.BytesIO(csv_data.encode("utf-8")), "export_links.csv")
+        }
+        res = self.client.post("/api/import", data=data, content_type="multipart/form-data")
+        self.assertEqual(res.status_code, 200)
+        json_data = res.get_json()
+        self.assertEqual(json_data["status"], "success")
+        self.assertEqual(json_data["format"], "csv")
+        self.assertEqual(json_data["imported"], 2)
+        self.assertEqual(json_data["merged"], 1)
+
+        # Verify items in database
+        tree_res = self.client.get("/api/tree")
+        stats = tree_res.get_json()["stats"]
+        self.assertEqual(stats["total_urls"], 2)
+        self.assertEqual(stats["total_submissions"], 3)
+
+    def test_import_csv_preview_mode(self):
+        csv_data = "url\nhttps://example.com/preview1.jpg\nhttps://example.com/preview2.png\n"
+        data = {
+            "file": (io.BytesIO(csv_data.encode("utf-8")), "test.csv")
+        }
+        # Dry run with preview=true
+        res = self.client.post("/api/import?preview=true", data=data, content_type="multipart/form-data")
+        self.assertEqual(res.status_code, 200)
+        json_data = res.get_json()
+        self.assertEqual(json_data["status"], "preview")
+        self.assertEqual(json_data["total_found"], 2)
+        self.assertEqual(json_data["new_count"], 2)
+        self.assertEqual(json_data["duplicate_count"], 0)
+
+        # Database should remain empty
+        tree_res = self.client.get("/api/tree")
+        self.assertEqual(tree_res.get_json()["stats"]["total_urls"], 0)
+
+    def test_import_csv_direct_post(self):
+        csv_data = "https://cdn.example.org/clip1.mp4,https://cdn.example.org/clip2.mp4"
+        res = self.client.post(
+            "/api/import",
+            data=csv_data,
+            headers={"Content-Type": "text/csv"}
+        )
+        self.assertEqual(res.status_code, 200)
+        json_data = res.get_json()
+        self.assertEqual(json_data["status"], "success")
+        self.assertEqual(json_data["imported"], 2)
+
+    def test_import_csv_no_urls(self):
+        csv_data = "colA,colB,colC\nfoo,bar,baz\n"
+        data = {
+            "file": (io.BytesIO(csv_data.encode("utf-8")), "empty.csv")
+        }
+        res = self.client.post("/api/import", data=data, content_type="multipart/form-data")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("No valid HTTP/HTTPS URLs found", res.get_json()["message"])
+
+    def test_import_xml_sitemap_upload(self):
+        xml_data = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+            '  <url>\n'
+            '    <loc>https://example.com/gallery/img1.jpg</loc>\n'
+            '    <lastmod>2026-10-25</lastmod>\n'
+            '  </url>\n'
+            '  <url>\n'
+            '    <loc>https://example.com/gallery/img2.png</loc>\n'
+            '  </url>\n'
+            '  <url>\n'
+            '    <loc>https://example.com/gallery/img1.jpg</loc>\n'
+            '  </url>\n'
+            '</urlset>'
+        )
+        data = {
+            "file": (io.BytesIO(xml_data.encode("utf-8")), "sitemap.xml")
+        }
+        res = self.client.post("/api/import", data=data, content_type="multipart/form-data")
+        self.assertEqual(res.status_code, 200)
+        json_data = res.get_json()
+        self.assertEqual(json_data["status"], "success")
+        self.assertEqual(json_data["format"], "xml")
+        # In _extract_urls_from_xml, seen set deduplicates extracted unique URLs to 2:
+        self.assertEqual(json_data["imported"], 2)
+
+        tree_res = self.client.get("/api/tree")
+        self.assertEqual(tree_res.get_json()["stats"]["total_urls"], 2)
+
+    def test_import_xml_media_tags_and_attributes(self):
+        xml_data = (
+            '<feed>\n'
+            '  <entry>\n'
+            '    <link href="https://media.org/videos/nature.mp4" />\n'
+            '    <image:loc>https://media.org/images/nature_thumb.webp</image:loc>\n'
+            '  </entry>\n'
+            '</feed>'
+        )
+        data = {
+            "file": (io.BytesIO(xml_data.encode("utf-8")), "feed.xml")
+        }
+        res = self.client.post("/api/import", data=data, content_type="multipart/form-data")
+        self.assertEqual(res.status_code, 200)
+        json_data = res.get_json()
+        self.assertEqual(json_data["status"], "success")
+        self.assertEqual(json_data["imported"], 2)
+
+    def test_import_xml_direct_post(self):
+        xml_data = '<urlset><url><loc>https://cdn.xmlsite.com/art.svg</loc></url></urlset>'
+        res = self.client.post(
+            "/api/import",
+            data=xml_data,
+            headers={"Content-Type": "application/xml"}
+        )
+        self.assertEqual(res.status_code, 200)
+        json_data = res.get_json()
+        self.assertEqual(json_data["status"], "success")
+        self.assertEqual(json_data["imported"], 1)
+
+    def test_import_xml_preview_mode(self):
+        xml_data = '<urlset><url><loc>https://cdn.xmlsite.com/preview.png</loc></url></urlset>'
+        data = {
+            "file": (io.BytesIO(xml_data.encode("utf-8")), "sitemap.xml")
+        }
+        res = self.client.post("/api/import?preview=true", data=data, content_type="multipart/form-data")
+        self.assertEqual(res.status_code, 200)
+        json_data = res.get_json()
+        self.assertEqual(json_data["status"], "preview")
+        self.assertEqual(json_data["format"], "xml")
+        self.assertEqual(json_data["new_count"], 1)
+
+    def test_import_text_file_upload(self):
+        text_data = (
+            "# My Saved Media\n"
+            "Here is the first item: https://textsite.com/media/scene1.mp4 (very nice!)\n"
+            "And here is another: https://textsite.com/media/scene2.webm.\n"
+            "Duplicate check: https://textsite.com/media/scene1.mp4\n"
+        )
+        data = {
+            "file": (io.BytesIO(text_data.encode("utf-8")), "links.txt")
+        }
+        res = self.client.post("/api/import", data=data, content_type="multipart/form-data")
+        self.assertEqual(res.status_code, 200)
+        json_data = res.get_json()
+        self.assertEqual(json_data["status"], "success")
+        self.assertEqual(json_data["format"], "text")
+        self.assertEqual(json_data["imported"], 2)
+
+        tree_res = self.client.get("/api/tree")
+        self.assertEqual(tree_res.get_json()["stats"]["total_urls"], 2)
+
+    def test_import_text_direct_post(self):
+        raw_text = "https://cdn.text.org/photo_a.jpg\nhttps://cdn.text.org/photo_b.png"
+        res = self.client.post(
+            "/api/import",
+            data=raw_text,
+            headers={"Content-Type": "text/plain"}
+        )
+        self.assertEqual(res.status_code, 200)
+        json_data = res.get_json()
+        self.assertEqual(json_data["status"], "success")
+        self.assertEqual(json_data["imported"], 2)
+
+    def test_import_text_preview_mode(self):
+        raw_text = "https://cdn.text.org/sample.gif"
+        res = self.client.post(
+            "/api/import?preview=true",
+            data=raw_text,
+            headers={"Content-Type": "text/plain"}
+        )
+        self.assertEqual(res.status_code, 200)
+        json_data = res.get_json()
+        self.assertEqual(json_data["status"], "preview")
+        self.assertEqual(json_data["format"], "text")
+        self.assertEqual(json_data["new_count"], 1)
+
+    def test_import_text_no_urls(self):
+        raw_text = "Just some notes without any http web links here."
+        res = self.client.post(
+            "/api/import",
+            data=raw_text,
+            headers={"Content-Type": "text/plain"}
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("No valid HTTP/HTTPS URLs found", res.get_json()["message"])
+
+    def test_index_contains_drag_drop_and_import_modal(self):
+        res = self.client.get("/")
+        self.assertEqual(res.status_code, 200)
+        html = res.data.decode("utf-8")
+        self.assertIn('id="drag-drop-overlay"', html)
+        self.assertIn('id="import-preview-modal"', html)
+        self.assertIn('id="import-total-found"', html)
+        self.assertIn('id="import-new-count"', html)
+        self.assertIn('id="import-dup-count"', html)
+        self.assertIn('id="import-preview-list"', html)
+        self.assertIn('id="confirm-import-btn"', html)
+        self.assertIn('id="cancel-import-btn"', html)
+        self.assertIn('.csv', html)
+        self.assertIn('.xml', html)
+        self.assertIn('.txt', html)
 
 
 if __name__ == "__main__":
