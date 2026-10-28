@@ -145,10 +145,36 @@
                     <div class="library-title">
                         <h2 id="files-title">Folder structure <span class="soft-count" id="tree-count-badge">0</span>
                         </h2>
-                        <p>Analyzed files arranged by source and path</p>
+                        <p id="library-subtitle">Analyzed files arranged by source and path</p>
                     </div>
 
                     <div class="toolbar-actions">
+                        <!-- View Mode Toggle (Tree / Grid) -->
+                        <div class="view-mode-toggle" id="view-mode-toggle" role="group" aria-label="View Mode">
+                            <button type="button" class="view-toggle-btn active" id="view-tree-btn" data-mode="tree"
+                                title="Tree View (Shift+T)">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <line x1="8" y1="6" x2="21" y2="6"></line>
+                                    <line x1="8" y1="12" x2="21" y2="12"></line>
+                                    <line x1="8" y1="18" x2="21" y2="18"></line>
+                                    <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                                    <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                                    <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                                </svg>
+                                <span>Tree</span>
+                            </button>
+                            <button type="button" class="view-toggle-btn" id="view-grid-btn" data-mode="grid"
+                                title="Thumbnail Grid View (Shift+G)">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+                                    <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+                                    <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+                                    <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+                                </svg>
+                                <span>Grid</span>
+                            </button>
+                        </div>
+
                         <!-- Search Box -->
                         <label class="search-box" for="tree-search-input">
                             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -163,7 +189,7 @@
                         </label>
 
                         <!-- Expand All Branches (Universal Expand Outward Icon) -->
-                        <button type="button" id="expand-all-btn" class="tree-action-icon-btn"
+                        <button type="button" id="expand-all-btn" class="tree-action-icon-btn tree-only-action"
                             title="Expand all folders" disabled>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                 <polyline points="15 3 21 3 21 9"></polyline>
@@ -175,7 +201,7 @@
                         </button>
 
                         <!-- Collapse All Branches (Universal Collapse Inward Icon) -->
-                        <button type="button" id="collapse-all-btn" class="tree-action-icon-btn"
+                        <button type="button" id="collapse-all-btn" class="tree-action-icon-btn tree-only-action"
                             title="Collapse all folders" disabled>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                 <polyline points="4 14 10 14 10 20"></polyline>
@@ -187,7 +213,7 @@
                         </button>
 
                         <!-- Copy ASCII Tree Diagram -->
-                        <button type="button" id="copy-tree-text-btn" class="tree-action-icon-btn"
+                        <button type="button" id="copy-tree-text-btn" class="tree-action-icon-btn tree-only-action"
                             title="Copy ASCII tree diagram to clipboard" disabled>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -199,7 +225,7 @@
                 </div>
 
                 <!-- Table Column Header -->
-                <div class="table-head">
+                <div class="table-head" id="table-head">
                     <span>NAME</span>
                     <span>TYPE</span>
                     <span>ADDED</span>
@@ -227,6 +253,59 @@
             </footer>
         </div>
     </main>
+
+    <!-- Floating Hover Preview Card (Populated dynamically on row/card hover) -->
+    <div id="floating-preview-card" class="floating-preview-card" role="tooltip" aria-hidden="true">
+        <div class="preview-card-inner">
+            <div class="preview-card-thumb-wrap">
+                <div class="preview-thumb-skeleton" aria-hidden="true"></div>
+                <img id="preview-card-img" class="preview-card-img" src="" alt="Media Preview">
+                <div id="preview-card-fallback" class="preview-card-fallback" style="display: none;"></div>
+                <span id="preview-dim-badge" class="preview-dim-pill"></span>
+            </div>
+            <div class="preview-card-content">
+                <div class="preview-card-header">
+                    <span id="preview-card-ext" class="type-chip image-chip">FILE</span>
+                    <strong id="preview-card-name" class="preview-card-title"></strong>
+                </div>
+                <div class="preview-meta-grid">
+                    <div class="preview-meta-item">
+                        <span class="preview-meta-label">Size</span>
+                        <strong id="preview-meta-size" class="preview-meta-val">—</strong>
+                    </div>
+                    <div class="preview-meta-item">
+                        <span class="preview-meta-label">Dimensions</span>
+                        <strong id="preview-meta-dim" class="preview-meta-val">—</strong>
+                    </div>
+                    <div class="preview-meta-item">
+                        <span class="preview-meta-label">Host / CDN</span>
+                        <strong id="preview-meta-cdn" class="preview-meta-val">—</strong>
+                    </div>
+                    <div class="preview-meta-item">
+                        <span class="preview-meta-label">MIME</span>
+                        <strong id="preview-meta-mime" class="preview-meta-val">—</strong>
+                    </div>
+                </div>
+                <div class="preview-card-actions">
+                    <button type="button" id="preview-copy-btn" class="preview-action-btn" title="Copy URL">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                        <span>Copy URL</span>
+                    </button>
+                    <a id="preview-open-link" href="#" target="_blank" rel="noopener noreferrer" class="preview-action-btn preview-open-btn" title="Open media in new tab">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                            <polyline points="15 3 21 3 21 9"></polyline>
+                            <line x1="10" y1="14" x2="21" y2="3"></line>
+                        </svg>
+                        <span>Open</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Reset Confirmation Modal -->
     <div id="reset-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">

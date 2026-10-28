@@ -222,3 +222,4 @@ __marimo__/
 # Local storage and temporary files
 url_database.json
 *.tmp
+static/thumb_cache/

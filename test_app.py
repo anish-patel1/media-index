@@ -214,6 +214,26 @@ class TestAppRoutes(unittest.TestCase):
             self.assertEqual(data["status"], "success")
             self.assertEqual(data["count"], 2)
 
+    def test_index_contains_view_mode_toggle(self):
+        res = self.client.get("/")
+        self.assertEqual(res.status_code, 200)
+        html = res.data.decode("utf-8")
+        self.assertIn('id="view-mode-toggle"', html)
+        self.assertIn('id="view-tree-btn"', html)
+        self.assertIn('id="view-grid-btn"', html)
+        self.assertIn('id="library-subtitle"', html)
+        self.assertIn('id="table-head"', html)
+
+    def test_index_contains_floating_preview_card(self):
+        res = self.client.get("/")
+        self.assertEqual(res.status_code, 200)
+        html = res.data.decode("utf-8")
+        self.assertIn('id="floating-preview-card"', html)
+        self.assertIn('id="preview-card-img"', html)
+        self.assertIn('id="preview-dim-badge"', html)
+        self.assertIn('id="preview-copy-btn"', html)
+        self.assertIn('id="preview-open-link"', html)
+
 
 if __name__ == "__main__":
     unittest.main()

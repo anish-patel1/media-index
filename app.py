@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from flask import Flask, render_template, request, jsonify, Response, send_file, send_from_directory
 from database import URLDatabase
 from enricher import MetadataEnricher
+from thumbnail_manager import get_or_create_thumbnail
 
 
 # Initialize Flask app
@@ -165,6 +166,35 @@ def enrich_media():
             "status": "error",
             "message": f"Enrichment failed: {str(e)}"
         }), 500
+
+@app.route("/api/thumbnail", methods=["GET"])
+def get_thumbnail():
+    """Proxies and serves an optimized cached WebP thumbnail for a given media URL."""
+    target_url = request.args.get("url")
+    if not target_url or not target_url.strip():
+        return jsonify({
+            "status": "error",
+            "message": "Missing 'url' query parameter."
+        }), 400
+
+    size_param = request.args.get("size", "150")
+    try:
+        size = int(size_param)
+    except ValueError:
+        size = 150
+
+    thumb_path, err = get_or_create_thumbnail(target_url, size=size)
+    if err or not thumb_path:
+        return jsonify({
+            "status": "error",
+            "message": err or "Failed generating thumbnail."
+        }), 404
+
+    return send_file(
+        thumb_path,
+        mimetype="image/webp",
+        max_age=86400,
+    )
 
 
 @app.route("/api/tree", methods=["GET"])

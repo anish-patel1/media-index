@@ -76,6 +76,32 @@ document.addEventListener('DOMContentLoaded', () => {
     const collapseAllBtn = document.getElementById('collapse-all-btn');
     const copyTreeTextBtn = document.getElementById('copy-tree-text-btn');
 
+    // View Mode Toggle
+    const viewModeToggle = document.getElementById('view-mode-toggle');
+    const viewTreeBtn = document.getElementById('view-tree-btn');
+    const viewGridBtn = document.getElementById('view-grid-btn');
+    const librarySection = document.querySelector('.library-section');
+    const librarySubtitle = document.getElementById('library-subtitle');
+    const tableHead = document.getElementById('table-head');
+
+    // Floating Hover Preview Card Elements
+    const floatingPreviewCard = document.getElementById('floating-preview-card');
+    const previewCardImg = document.getElementById('preview-card-img');
+    const previewCardFallback = document.getElementById('preview-card-fallback');
+    const previewThumbSkeleton = document.querySelector('.preview-thumb-skeleton');
+    const previewDimBadge = document.getElementById('preview-dim-badge');
+    const previewCardExt = document.getElementById('preview-card-ext');
+    const previewCardName = document.getElementById('preview-card-name');
+    const previewMetaSize = document.getElementById('preview-meta-size');
+    const previewMetaDim = document.getElementById('preview-meta-dim');
+    const previewMetaCdn = document.getElementById('preview-meta-cdn');
+    const previewMetaMime = document.getElementById('preview-meta-mime');
+    const previewCopyBtn = document.getElementById('preview-copy-btn');
+    const previewOpenLink = document.getElementById('preview-open-link');
+
+    // Global file lookup map
+    const fileLookupMap = new Map();
+
     // Toast Container
     const toastContainer = document.getElementById('toast-container');
 
@@ -83,6 +109,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let rawTreeData = [];
     let currentSearchQuery = '';
     let lastUpdatedUrl = null;
+    const VIEW_MODE_KEY = 'media_view_mode';
+    let currentViewMode = localStorage.getItem(VIEW_MODE_KEY) || 'tree';
 
     // -------------------------------------------------------------
     // 3. Floating Toast Notifications
@@ -299,6 +327,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </details>
                 `;
             } else if (node.type === 'file') {
+                if (node.url) fileLookupMap.set(node.url, node);
                 const ext = (node.extension || 'FILE').toUpperCase();
                 const mType = node.media_type || 'image';
                 const timeText = formatTimeAgo(node.last_updated || node.first_added);
@@ -352,15 +381,23 @@ document.addEventListener('DOMContentLoaded', () => {
                             ${iconHtml}
                         </span>
                         <span class="file-name">
-                            <a href="${escapeHtml(node.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(node.url)}">
-                                <strong>${highlightText(node.name, query)}</strong>
-                            </a>
-                            <small title="${escapeHtml(node.url)}">${escapeHtml(truncated)}</small>
+                            <div class="file-title-row">
+                                <a href="${escapeHtml(node.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(node.url)}">
+                                    <strong>${highlightText(node.name, query)}</strong>
+                                </a>
+                                <button type="button" class="row-preview-trigger" data-url="${escapeHtml(node.url)}" title="Quick preview" aria-label="Preview image">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                    </svg>
+                                </button>
+                            </div>
+                            <div class="file-sub-row">
+                                <small title="${escapeHtml(node.url)}">${escapeHtml(truncated)}</small>
+                                ${metaBadgesHtml}
+                            </div>
                         </span>
-                        <div class="file-meta-group">
-                            ${metaBadgesHtml}
-                            <span class="type-chip ${chipClass}">${escapeHtml(ext)}</span>
-                        </div>
+                        <span class="type-chip ${chipClass}">${escapeHtml(ext)}</span>
                         <span class="row-meta">${escapeHtml(timeText)}</span>
                         ${repeatsBadge}
                     </div>
@@ -414,6 +451,410 @@ document.addEventListener('DOMContentLoaded', () => {
         treeContainer.innerHTML = html;
     }
 
+    // Helper: extract all file leaves from hierarchical tree data
+    function extractFilesFromTree(nodes, query = '') {
+        const files = [];
+        const q = query ? query.trim().toLowerCase() : '';
+
+        function walk(node, domain = null) {
+            if (!node) return;
+            const currentDomain = node.type === 'domain' ? node.name : domain;
+
+            if (node.type === 'file') {
+                if (node.url) fileLookupMap.set(node.url, node);
+                if (!q || 
+                    (node.name && node.name.toLowerCase().includes(q)) ||
+                    (node.url && node.url.toLowerCase().includes(q)) ||
+                    (node.extension && node.extension.toLowerCase().includes(q)) ||
+                    (currentDomain && currentDomain.toLowerCase().includes(q))
+                ) {
+                    files.push({ ...node, domain: currentDomain });
+                }
+                return;
+            }
+
+            if (node.children && Array.isArray(node.children)) {
+                for (const child of node.children) {
+                    walk(child, currentDomain);
+                }
+            }
+        }
+
+        if (Array.isArray(nodes)) {
+            for (const root of nodes) {
+                walk(root);
+            }
+        }
+        return files;
+    }
+
+    // Grid View Renderer
+    function renderGridView(treeData, searchQuery = '') {
+        if (!treeContainer) return;
+
+        if (!treeData || treeData.length === 0) {
+            treeContainer.innerHTML = `
+                <div class="empty-tree-state">
+                    <div class="empty-icon-wrap" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                            <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+                            <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+                            <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+                            <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+                        </svg>
+                    </div>
+                    <h3 class="empty-title">No Media URLs In Gallery</h3>
+                    <p class="empty-desc">Paste any image, video, or GIF link into the box above to see visual previews.</p>
+                </div>
+            `;
+            return;
+        }
+
+        const files = extractFilesFromTree(treeData, searchQuery);
+
+        if (files.length === 0) {
+            treeContainer.innerHTML = `
+                <div class="empty-tree-state">
+                    <h3 class="empty-title">No Matching Media</h3>
+                    <p class="empty-desc">No entries match your search query "<strong>${escapeHtml(searchQuery)}</strong>".</p>
+                </div>
+            `;
+            return;
+        }
+
+        const cardsHtml = files.map(file => {
+            const ext = (file.extension || 'FILE').toUpperCase();
+            const mType = file.media_type || 'image';
+            const meta = file.metadata || {};
+            const timeText = formatTimeAgo(file.last_updated || file.first_added);
+            const isImage = mType === 'image' || mType === 'gif' || ['JPG', 'JPEG', 'PNG', 'WEBP', 'GIF', 'AVIF', 'SVG'].includes(ext);
+            const thumbUrl = `/api/thumbnail?url=${encodeURIComponent(file.url)}&size=320`;
+
+            let thumbContent = '';
+            if (isImage) {
+                thumbContent = `
+                    <div class="thumb-skeleton" aria-hidden="true"></div>
+                    <img class="media-card-thumb lazy-thumb" 
+                         data-src="${escapeHtml(thumbUrl)}" 
+                         data-ext="${escapeHtml(ext)}"
+                         alt="${escapeHtml(file.name)}" 
+                         loading="lazy">
+                `;
+            } else if (mType === 'video' || ['MP4', 'WEBM', 'MOV', 'M4V'].includes(ext)) {
+                thumbContent = `
+                    <div class="media-card-fallback">
+                        ${SVG_ICONS.video}
+                        <span>${escapeHtml(ext)} Video</span>
+                    </div>
+                `;
+            } else {
+                thumbContent = `
+                    <div class="media-card-fallback">
+                        ${SVG_ICONS.file}
+                        <span>${escapeHtml(ext)}</span>
+                    </div>
+                `;
+            }
+
+            let metaBadgesHtml = '';
+            if (meta.size_bytes && !isNaN(meta.size_bytes) && Number(meta.size_bytes) > 0) {
+                metaBadgesHtml += `<span class="meta-badge size-badge" title="Size: ${Number(meta.size_bytes).toLocaleString()} bytes">${formatBytes(meta.size_bytes)}</span>`;
+            }
+            if (meta.dimensions && Array.isArray(meta.dimensions) && meta.dimensions.length === 2) {
+                metaBadgesHtml += `<span class="meta-badge dim-badge" title="Resolution: ${meta.dimensions[0]} × ${meta.dimensions[1]} px">${meta.dimensions[0]}×${meta.dimensions[1]}</span>`;
+            }
+
+            const repeatsBadge = file.count > 1 
+                ? `<span class="duplicate-badge" title="Submitted ${file.count} times">↻ ${file.count}</span>` 
+                : '';
+
+            return `
+                <div class="media-card" data-url="${escapeHtml(file.url)}">
+                    <div class="media-card-thumb-wrap">
+                        ${thumbContent}
+                        <div class="media-card-badge-top">
+                            <span class="type-chip ${mType === 'video' ? 'video-chip' : (ext === 'WEBP' ? 'webp-chip' : (ext === 'GIF' ? 'gif-chip' : 'image-chip'))}">${escapeHtml(ext)}</span>
+                            ${repeatsBadge}
+                        </div>
+                    </div>
+                    <div class="media-card-body">
+                        <div class="media-card-title" title="${escapeHtml(file.name)}">
+                            <a href="${escapeHtml(file.url)}" target="_blank" rel="noopener noreferrer">${highlightText(file.name, searchQuery)}</a>
+                        </div>
+                        <div class="media-card-domain" title="${escapeHtml(file.domain || file.url)}">
+                            ${escapeHtml(file.domain || '')}
+                        </div>
+                        <div class="media-card-meta">
+                            <div class="media-card-badges">
+                                ${metaBadgesHtml}
+                            </div>
+                            <span>${escapeHtml(timeText)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        treeContainer.innerHTML = `<div class="media-grid">${cardsHtml}</div>`;
+        observeLazyThumbnails();
+    }
+
+    // IntersectionObserver for Lazy-Loaded Thumbnails
+    let gridObserver = null;
+
+    function observeLazyThumbnails() {
+        if (gridObserver) {
+            gridObserver.disconnect();
+            gridObserver = null;
+        }
+
+        const lazyImages = treeContainer ? treeContainer.querySelectorAll('img.lazy-thumb') : [];
+        if (!lazyImages || !lazyImages.length) return;
+
+        function loadImg(img) {
+            const src = img.getAttribute('data-src');
+            if (!src || img.src) return;
+
+            img.src = src;
+
+            img.onload = () => {
+                img.classList.add('thumb-loaded');
+                const skeleton = img.previousElementSibling;
+                if (skeleton && skeleton.classList.contains('thumb-skeleton')) {
+                    skeleton.style.display = 'none';
+                }
+            };
+
+            img.onerror = () => {
+                const wrap = img.closest('.media-card-thumb-wrap');
+                const ext = img.getAttribute('data-ext') || 'IMG';
+                if (wrap) {
+                    wrap.innerHTML = `
+                        <div class="media-card-fallback">
+                            ${SVG_ICONS.image}
+                            <span>${escapeHtml(ext)}</span>
+                        </div>
+                    `;
+                }
+            };
+        }
+
+        if (typeof IntersectionObserver !== 'undefined') {
+            gridObserver = new IntersectionObserver((entries, observer) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const img = entry.target;
+                        loadImg(img);
+                        observer.unobserve(img);
+                    }
+                });
+            }, { rootMargin: '200px 0px' });
+
+            lazyImages.forEach(img => gridObserver.observe(img));
+        } else {
+            // Direct load fallback
+            lazyImages.forEach(loadImg);
+        }
+    }
+
+    // -------------------------------------------------------------
+    // Floating Hover Preview Panel Controller
+    // -------------------------------------------------------------
+    let hoverShowTimer = null;
+    let hoverHideTimer = null;
+    let currentPreviewUrl = null;
+
+    function queueHoverPreview(node, anchorEl, delay = 220) {
+        clearTimeout(hoverHideTimer);
+        if (currentPreviewUrl === node.url && floatingPreviewCard && floatingPreviewCard.classList.contains('active')) {
+            return;
+        }
+        clearTimeout(hoverShowTimer);
+        hoverShowTimer = setTimeout(() => showHoverPreview(node, anchorEl), delay);
+    }
+
+    function cancelHoverPreview() {
+        clearTimeout(hoverShowTimer);
+        clearTimeout(hoverHideTimer);
+        hoverHideTimer = setTimeout(() => hideHoverPreview(), 180);
+    }
+
+    function hideHoverPreview() {
+        clearTimeout(hoverShowTimer);
+        clearTimeout(hoverHideTimer);
+        if (floatingPreviewCard) {
+            floatingPreviewCard.classList.remove('active');
+            floatingPreviewCard.setAttribute('aria-hidden', 'true');
+        }
+        currentPreviewUrl = null;
+    }
+
+    function showHoverPreview(node, anchorEl) {
+        if (!floatingPreviewCard || !node || !anchorEl) return;
+        currentPreviewUrl = node.url;
+
+        const ext = (node.extension || 'FILE').toUpperCase();
+        const mType = node.media_type || 'image';
+        const meta = node.metadata || {};
+        const isImg = mType === 'image' || mType === 'gif' || ['JPG', 'JPEG', 'PNG', 'WEBP', 'GIF', 'AVIF', 'SVG'].includes(ext);
+
+        // Header Title & Extension Chip
+        if (previewCardName) previewCardName.textContent = node.name || 'Media Asset';
+        if (previewCardExt) {
+            previewCardExt.textContent = ext;
+            previewCardExt.className = `type-chip ${mType === 'video' ? 'video-chip' : (ext === 'WEBP' ? 'webp-chip' : (ext === 'GIF' ? 'gif-chip' : 'image-chip'))}`;
+        }
+
+        // Metadata grid
+        if (previewMetaSize) {
+            previewMetaSize.textContent = meta.size_bytes ? formatBytes(meta.size_bytes) : '—';
+        }
+        if (previewMetaDim) {
+            if (meta.dimensions && Array.isArray(meta.dimensions) && meta.dimensions.length === 2) {
+                previewMetaDim.textContent = `${meta.dimensions[0]} × ${meta.dimensions[1]} px`;
+                if (previewDimBadge) {
+                    previewDimBadge.textContent = `${meta.dimensions[0]}×${meta.dimensions[1]}`;
+                    previewDimBadge.style.display = 'block';
+                }
+            } else {
+                previewMetaDim.textContent = '—';
+                if (previewDimBadge) previewDimBadge.style.display = 'none';
+            }
+        }
+        if (previewMetaCdn) {
+            previewMetaCdn.textContent = meta.cdn_provider || '—';
+        }
+        if (previewMetaMime) {
+            previewMetaMime.textContent = meta.mime_type || (node.extension ? `image/${node.extension}` : '—');
+        }
+
+        // Action links
+        if (previewOpenLink) {
+            previewOpenLink.href = node.url;
+        }
+        if (previewCopyBtn) {
+            previewCopyBtn.onclick = async () => {
+                try {
+                    await navigator.clipboard.writeText(node.url);
+                    showToast('Copied', 'Media URL copied to clipboard!', 'success', 2000);
+                } catch {
+                    showToast('Copy Failed', 'Clipboard access not permitted.', 'error');
+                }
+            };
+        }
+
+        // Media Thumbnail Preview
+        if (isImg) {
+            if (previewCardFallback) previewCardFallback.style.display = 'none';
+            if (previewThumbSkeleton) previewThumbSkeleton.style.display = 'block';
+            if (previewCardImg) {
+                previewCardImg.style.display = 'block';
+                previewCardImg.classList.remove('loaded');
+                const thumbUrl = `/api/thumbnail?url=${encodeURIComponent(node.url)}&size=480`;
+                previewCardImg.src = thumbUrl;
+                previewCardImg.onload = () => {
+                    previewCardImg.classList.add('loaded');
+                    if (previewThumbSkeleton) previewThumbSkeleton.style.display = 'none';
+                };
+                previewCardImg.onerror = () => {
+                    previewCardImg.style.display = 'none';
+                    if (previewThumbSkeleton) previewThumbSkeleton.style.display = 'none';
+                    if (previewCardFallback) {
+                        previewCardFallback.style.display = 'flex';
+                        previewCardFallback.innerHTML = `${SVG_ICONS.image}<span>${escapeHtml(ext)}</span>`;
+                    }
+                };
+            }
+        } else {
+            if (previewCardImg) previewCardImg.style.display = 'none';
+            if (previewThumbSkeleton) previewThumbSkeleton.style.display = 'none';
+            if (previewDimBadge) previewDimBadge.style.display = 'none';
+            if (previewCardFallback) {
+                previewCardFallback.style.display = 'flex';
+                if (mType === 'video' || ['MP4', 'WEBM', 'MOV', 'M4V'].includes(ext)) {
+                    previewCardFallback.innerHTML = `${SVG_ICONS.video}<span>${escapeHtml(ext)} Video</span>`;
+                } else {
+                    previewCardFallback.innerHTML = `${SVG_ICONS.file}<span>${escapeHtml(ext)}</span>`;
+                }
+            }
+        }
+
+        // Smart positioning relative to anchor and viewport bounds
+        const rect = anchorEl.getBoundingClientRect();
+        const cardWidth = 310;
+        const cardHeight = 330;
+
+        let left, top;
+
+        if (currentViewMode === 'tree') {
+            // Position safely to the right margin so it NEVER covers tree rows
+            if (rect.right + cardWidth + 24 <= window.innerWidth) {
+                left = rect.right + 12;
+            } else {
+                left = window.innerWidth - cardWidth - 24;
+            }
+            top = rect.top - 60;
+            if (top + cardHeight > window.innerHeight - 16) {
+                top = window.innerHeight - cardHeight - 16;
+            }
+            if (top < 16) top = 16;
+        } else {
+            // Grid view: center horizontally relative to card, place below or above
+            left = rect.left + (rect.width - cardWidth) / 2;
+            top = rect.bottom + 8;
+            if (top + cardHeight > window.innerHeight - 16) {
+                top = rect.top - cardHeight - 8;
+            }
+            if (top < 16) top = 16;
+            if (left + cardWidth > window.innerWidth - 16) {
+                left = window.innerWidth - cardWidth - 16;
+            }
+            if (left < 16) left = 16;
+        }
+
+        floatingPreviewCard.style.top = `${Math.round(top)}px`;
+        floatingPreviewCard.style.left = `${Math.round(left)}px`;
+        floatingPreviewCard.classList.add('active');
+        floatingPreviewCard.setAttribute('aria-hidden', 'false');
+    }
+
+    // View Switching and Dispatch
+    function setViewMode(mode) {
+        if (mode !== 'tree' && mode !== 'grid') mode = 'tree';
+        currentViewMode = mode;
+        try {
+            localStorage.setItem(VIEW_MODE_KEY, mode);
+        } catch {}
+
+        hideHoverPreview();
+
+        if (mode === 'tree' && gridObserver) {
+            gridObserver.disconnect();
+            gridObserver = null;
+        }
+
+        if (viewTreeBtn) viewTreeBtn.classList.toggle('active', mode === 'tree');
+        if (viewGridBtn) viewGridBtn.classList.toggle('active', mode === 'grid');
+        if (librarySection) librarySection.classList.toggle('is-grid-mode', mode === 'grid');
+        if (tableHead) tableHead.style.display = mode === 'grid' ? 'none' : '';
+
+        if (librarySubtitle) {
+            librarySubtitle.textContent = mode === 'grid' 
+                ? 'Visual gallery of analyzed media files' 
+                : 'Analyzed files arranged by source and path';
+        }
+
+        renderActiveView();
+    }
+
+    function renderActiveView() {
+        if (currentViewMode === 'grid') {
+            renderGridView(rawTreeData, currentSearchQuery);
+        } else {
+            renderTree(rawTreeData, currentSearchQuery);
+        }
+    }
+
     // -------------------------------------------------------------
     // 6. Fetch & Refresh Tree Data
     // -------------------------------------------------------------
@@ -453,7 +894,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
 
-                renderTree(rawTreeData, currentSearchQuery);
+                renderActiveView();
             }
         } catch (err) {
             console.error('Error loading tree data:', err);
@@ -577,15 +1018,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // -------------------------------------------------------------
-    // 8. Live Search & Tree Controls
+    // 8. Live Search & Tree / Grid Controls
     // -------------------------------------------------------------
+    if (viewTreeBtn) {
+        viewTreeBtn.addEventListener('click', () => setViewMode('tree'));
+    }
+
+    if (viewGridBtn) {
+        viewGridBtn.addEventListener('click', () => setViewMode('grid'));
+    }
+
     if (treeSearchInput) {
         treeSearchInput.addEventListener('input', (e) => {
             currentSearchQuery = e.target.value;
             if (clearSearchBtn) {
                 clearSearchBtn.style.display = currentSearchQuery ? 'grid' : 'none';
             }
-            renderTree(rawTreeData, currentSearchQuery);
+            renderActiveView();
         });
     }
 
@@ -595,7 +1044,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 treeSearchInput.value = '';
                 currentSearchQuery = '';
                 clearSearchBtn.style.display = 'none';
-                renderTree(rawTreeData, '');
+                renderActiveView();
                 treeSearchInput.focus();
             }
         });
@@ -617,6 +1066,58 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('Collapsed', 'All directory branches closed.', 'info', 2000);
         });
     }
+
+    // Floating Hover Preview Event Delegation
+    if (floatingPreviewCard) {
+        floatingPreviewCard.addEventListener('mouseenter', () => clearTimeout(hoverHideTimer));
+        floatingPreviewCard.addEventListener('mouseleave', () => cancelHoverPreview());
+    }
+
+    if (treeContainer) {
+        treeContainer.addEventListener('mouseover', (e) => {
+            const previewTrigger = e.target.closest('.row-preview-trigger, .file-icon');
+            const rowOrCard = e.target.closest('.file-row, .media-card');
+            if (!rowOrCard) return;
+
+            const url = rowOrCard.getAttribute('data-url');
+            if (!url) return;
+            const node = fileLookupMap.get(url);
+            if (!node) return;
+
+            if (previewTrigger) {
+                // User deliberately hovered over preview eye button or icon: fast reveal
+                queueHoverPreview(node, previewTrigger, 100);
+            } else if (currentViewMode === 'grid') {
+                // Grid view card hover
+                queueHoverPreview(node, rowOrCard, 220);
+            } else {
+                // Tree view: deliberate hover delay, positioned to the side
+                queueHoverPreview(node, rowOrCard, 350);
+            }
+        });
+
+        treeContainer.addEventListener('mouseout', (e) => {
+            const rowOrCard = e.target.closest('.file-row, .media-card');
+            if (!rowOrCard) return;
+            if (rowOrCard.contains(e.relatedTarget)) return;
+            cancelHoverPreview();
+        });
+
+        treeContainer.addEventListener('click', (e) => {
+            const previewTrigger = e.target.closest('.row-preview-trigger');
+            if (previewTrigger) {
+                e.preventDefault();
+                e.stopPropagation();
+                const url = previewTrigger.getAttribute('data-url');
+                const node = fileLookupMap.get(url);
+                if (node) {
+                    showHoverPreview(node, previewTrigger);
+                }
+            }
+        });
+    }
+
+    window.addEventListener('scroll', () => hideHoverPreview(), { passive: true });
 
     // Copy ASCII Tree Diagram
     function generateAsciiTree(nodes, indent = '') {
@@ -790,6 +1291,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Escape key handling across components
         if (e.key === 'Escape') {
+            // 0. Close Floating Preview Card if active
+            if (floatingPreviewCard && floatingPreviewCard.classList.contains('active')) {
+                hideHoverPreview();
+                return;
+            }
+
             // 1. Close Modal if active
             if (resetModal && resetModal.classList.contains('active')) {
                 closeResetModal();
@@ -813,10 +1320,26 @@ document.addEventListener('DOMContentLoaded', () => {
                     treeSearchInput.value = '';
                     currentSearchQuery = '';
                     if (clearSearchBtn) clearSearchBtn.style.display = 'none';
-                    renderTree(rawTreeData, '');
+                    renderActiveView();
                 } else {
                     treeSearchInput.blur();
                 }
+                return;
+            }
+        }
+
+        // Shortcut: Toggle View Mode (Shift+T for Tree, Shift+G for Grid)
+        if (e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && !isTyping) {
+            if (e.key === 'T' || e.key === 't') {
+                e.preventDefault();
+                setViewMode('tree');
+                showToast('View Changed', 'Switched to Tree View', 'info', 1500);
+                return;
+            }
+            if (e.key === 'G' || e.key === 'g') {
+                e.preventDefault();
+                setViewMode('grid');
+                showToast('View Changed', 'Switched to Grid View', 'info', 1500);
                 return;
             }
         }
@@ -870,5 +1393,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------
     // 11. Initial Load
     // -------------------------------------------------------------
+    setViewMode(currentViewMode);
     loadTreeData();
 });
