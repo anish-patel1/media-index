@@ -206,6 +206,79 @@ class URLDatabase:
             return True
         return False
 
+    def delete_urls(self, urls_to_delete: list, user_id: str = "default") -> dict:
+        """Removes specified URLs from the user's database.
+        Returns deleted count and remaining total.
+        """
+        if not urls_to_delete:
+            return {"status": "success", "deleted_count": 0}
+
+        data = self._load()
+        _, urls = self._resolve_user_urls(data, user_id, auto_claim=False)
+        deleted = 0
+
+        for raw_u in urls_to_delete:
+            if not isinstance(raw_u, str):
+                continue
+            clean_u = raw_u.strip()
+            if clean_u in urls:
+                del urls[clean_u]
+                deleted += 1
+            else:
+                try:
+                    norm = self.parse_url(clean_u)["normalized_url"]
+                    if norm in urls:
+                        del urls[norm]
+                        deleted += 1
+                except ValueError:
+                    pass
+
+        if deleted > 0:
+            self._save(data)
+
+        return {
+            "status": "success",
+            "deleted_count": deleted,
+            "remaining_urls": len(urls)
+        }
+
+    def dismiss_cluster(self, cluster_id: str, urls: list = None, user_id: str = "default") -> dict:
+        """Marks a cluster as dismissed ('Keep Both' / intentional duplicates) for this user.
+        Persisted so that the group is not surfaced again in the duplicates view.
+        """
+        if not cluster_id:
+            return {"status": "error", "message": "cluster_id is required"}
+
+        data = self._load()
+        users = data.setdefault("users", {})
+        clean_user_id = (user_id or "default").strip() or "default"
+        user_obj = users.setdefault(clean_user_id, {"urls": {}})
+        
+        dismissed = user_obj.setdefault("dismissed_clusters", [])
+        if cluster_id not in dismissed:
+            dismissed.append(cluster_id)
+            self._save(data)
+            
+        return {"status": "success", "cluster_id": cluster_id, "dismissed_count": len(dismissed)}
+
+    def get_dismissed_clusters(self, user_id: str = "default") -> set:
+        """Returns the set of dismissed cluster IDs for the user."""
+        data = self._load()
+        users = data.setdefault("users", {})
+        clean_user_id = (user_id or "default").strip() or "default"
+        user_obj = users.get(clean_user_id, {})
+        return set(user_obj.get("dismissed_clusters", []))
+
+    def reset_dismissed_clusters(self, user_id: str = "default") -> dict:
+        """Resets all dismissed clusters for the user so all duplicates can be re-analyzed."""
+        data = self._load()
+        users = data.setdefault("users", {})
+        clean_user_id = (user_id or "default").strip() or "default"
+        user_obj = users.setdefault(clean_user_id, {"urls": {}})
+        user_obj["dismissed_clusters"] = []
+        self._save(data)
+        return {"status": "success", "message": "All dismissed duplicate groups have been reset."}
+
 
     def get_tree(self, user_id: str = "default") -> dict:
         """Reconstructs stored URLs for a specific user into a hierarchical folder-like tree

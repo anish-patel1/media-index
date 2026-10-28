@@ -10,6 +10,7 @@ from flask import Flask, render_template, request, jsonify, Response, send_file,
 from database import URLDatabase
 from enricher import MetadataEnricher
 from thumbnail_manager import get_or_create_thumbnail
+from cluster_engine import ClusterEngine
 
 
 # Initialize Flask app
@@ -215,6 +216,124 @@ def get_tree():
         return jsonify({
             "status": "error",
             "message": f"Failed to retrieve tree structure: {str(e)}"
+        }), 500
+
+
+@app.route("/api/clusters", methods=["GET"])
+def get_clusters():
+    """Detects and returns duplicate clusters and potential storage/bandwidth savings for the caller's library.
+    Supports optional query filter ?confidence=high|medium|low.
+    """
+    user_id = get_user_id()
+    try:
+        data = db._load()
+        _, urls = db._resolve_user_urls(data, user_id, auto_claim=False)
+
+        engine = ClusterEngine()
+        dismissed_ids = db.get_dismissed_clusters(user_id=user_id)
+        all_clusters = engine.find_clusters(urls, dismissed_cluster_ids=dismissed_ids)
+
+        conf_filter = request.args.get("confidence", "").strip().lower()
+        if conf_filter in ("high", "medium", "low"):
+            clusters = [c for c in all_clusters if c.get("confidence") == conf_filter]
+        else:
+            clusters = all_clusters
+
+        total_clusters = len(clusters)
+        total_duplicate_urls = sum(c.get("duplicate_count", 0) for c in clusters)
+        total_savings_bytes = sum(c.get("savings_bytes", 0) for c in clusters)
+
+        return jsonify({
+            "status": "success",
+            "user_id": user_id,
+            "summary": {
+                "total_clusters": total_clusters,
+                "total_duplicate_urls": total_duplicate_urls,
+                "total_variants": total_duplicate_urls,
+                "total_savings_bytes": total_savings_bytes,
+                "potential_savings_bytes": total_savings_bytes
+            },
+            "clusters": clusters
+        }), 200
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to calculate duplicate clusters: {str(e)}"
+        }), 500
+
+
+@app.route("/api/clusters/dismiss", methods=["POST"])
+def dismiss_cluster():
+    """Dismisses a cluster ('Keep Both' / intentional duplicates) for the current user.
+    The group will no longer appear in the duplicates view while preserving all files in the database.
+    """
+    user_id = get_user_id()
+    payload = request.get_json(silent=True) or {}
+    cluster_id = payload.get("cluster_id")
+    if not cluster_id or not isinstance(cluster_id, str):
+        return jsonify({
+            "status": "error",
+            "message": "cluster_id string is required in JSON payload."
+        }), 400
+
+    urls = payload.get("urls") if isinstance(payload.get("urls"), list) else None
+
+    try:
+        result = db.dismiss_cluster(cluster_id.strip(), urls=urls, user_id=user_id)
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to dismiss cluster: {str(e)}"
+        }), 500
+
+
+@app.route("/api/clusters/reset-dismissed", methods=["POST"])
+def reset_dismissed_clusters():
+    """Resets all previously dismissed duplicate clusters for the current user."""
+    user_id = get_user_id()
+    try:
+        result = db.reset_dismissed_clusters(user_id=user_id)
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to reset dismissed clusters: {str(e)}"
+        }), 500
+
+
+@app.route("/api/urls", methods=["DELETE"])
+def delete_urls():
+    """Removes one or more URLs from the caller's database.
+    Accepts URL in 'url' query parameter or list of URLs in JSON body {"urls": [...]}.
+    """
+    user_id = get_user_id()
+    urls_to_delete = []
+
+    single_url = request.args.get("url")
+    if single_url:
+        urls_to_delete.append(single_url)
+
+    if request.is_json:
+        payload = request.get_json(silent=True) or {}
+        if isinstance(payload.get("urls"), list):
+            urls_to_delete.extend(payload["urls"])
+        elif isinstance(payload.get("url"), str):
+            urls_to_delete.append(payload["url"])
+
+    if not urls_to_delete:
+        return jsonify({
+            "status": "error",
+            "message": "No URLs provided for deletion. Provide 'url' query parameter or 'urls' array in JSON body."
+        }), 400
+
+    try:
+        result = db.delete_urls(urls_to_delete, user_id=user_id)
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to delete URLs: {str(e)}"
         }), 500
 
 

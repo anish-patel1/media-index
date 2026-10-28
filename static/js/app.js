@@ -88,10 +88,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const collapseAllBtn = document.getElementById('collapse-all-btn');
     const copyTreeTextBtn = document.getElementById('copy-tree-text-btn');
 
+    // Show/Hide & Focus Toolbar Controls
+    const toggleFoldersBtn = document.getElementById('toggle-tree-folders-btn');
+    const toggleFoldersText = document.getElementById('toggle-folders-text');
+    const toggleFocusModeBtn = document.getElementById('toggle-focus-mode-btn');
+    const focusModeText = document.getElementById('focus-mode-text');
+    const pageWrap = document.getElementById('page-wrap');
+    const mediaTypeFilters = document.getElementById('media-type-filters');
+    const activeFilterBadge = document.getElementById('active-filter-badge');
+    const filterCountImage = document.getElementById('filter-count-image');
+    const filterCountVideo = document.getElementById('filter-count-video');
+    const filterCountGif = document.getElementById('filter-count-gif');
+
     // View Mode Toggle
     const viewModeToggle = document.getElementById('view-mode-toggle');
     const viewTreeBtn = document.getElementById('view-tree-btn');
     const viewGridBtn = document.getElementById('view-grid-btn');
+    const viewClustersBtn = document.getElementById('view-clusters-btn');
+    const clustersBadge = document.getElementById('clusters-badge');
     const librarySection = document.querySelector('.library-section');
     const librarySubtitle = document.getElementById('library-subtitle');
     const tableHead = document.getElementById('table-head');
@@ -123,6 +137,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let lastUpdatedUrl = null;
     const VIEW_MODE_KEY = 'media_view_mode';
     let currentViewMode = localStorage.getItem(VIEW_MODE_KEY) || 'tree';
+    let rawClustersData = null;
+    let currentMediaTypeFilter = 'all'; // 'all' | 'image' | 'video' | 'gif'
+    const FOCUS_MODE_KEY = 'mua_focus_mode';
+    let isFocusMode = localStorage.getItem(FOCUS_MODE_KEY) === '1';
 
     // -------------------------------------------------------------
     // 3. Floating Toast Notifications
@@ -418,16 +436,21 @@ document.addEventListener('DOMContentLoaded', () => {
             return '';
         }
 
-        // Apply search filtering
+        // Apply search & media type filtering
         function filterNode(node) {
-            if (!query) return node;
-
-            const nameMatches = node.name.toLowerCase().includes(query);
-            const pathMatches = node.path && node.path.toLowerCase().includes(query);
-            const urlMatches = node.url && node.url.toLowerCase().includes(query);
-            const extMatches = node.extension && node.extension.toLowerCase().includes(query);
+            const hasQuery = Boolean(query);
+            const hasFilter = currentMediaTypeFilter !== 'all';
 
             if (node.type === 'file') {
+                if (hasFilter && node.media_type !== currentMediaTypeFilter) {
+                    return null;
+                }
+                if (!hasQuery) return node;
+
+                const nameMatches = node.name && node.name.toLowerCase().includes(query);
+                const pathMatches = node.path && node.path.toLowerCase().includes(query);
+                const urlMatches = node.url && node.url.toLowerCase().includes(query);
+                const extMatches = node.extension && node.extension.toLowerCase().includes(query);
                 return (nameMatches || urlMatches || extMatches) ? node : null;
             }
 
@@ -436,10 +459,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     .map(filterNode)
                     .filter(Boolean);
 
-                if (filteredChildren.length > 0 || nameMatches || pathMatches) {
+                const nameMatches = hasQuery && node.name && node.name.toLowerCase().includes(query);
+                const pathMatches = hasQuery && node.path && node.path.toLowerCase().includes(query);
+
+                if (filteredChildren.length > 0) {
                     return {
                         ...node,
                         children: filteredChildren
+                    };
+                }
+                if (!hasFilter && (nameMatches || pathMatches)) {
+                    return {
+                        ...node,
+                        children: []
                     };
                 }
             }
@@ -447,20 +479,24 @@ document.addEventListener('DOMContentLoaded', () => {
             return null;
         }
 
-        const filteredTree = query ? treeData.map(filterNode).filter(Boolean) : treeData;
+        const filteredTree = (query || currentMediaTypeFilter !== 'all') 
+            ? treeData.map(filterNode).filter(Boolean) 
+            : treeData;
 
         if (filteredTree.length === 0) {
             treeContainer.innerHTML = `
                 <div class="empty-tree-state">
                     <h3 class="empty-title">No Matching Files</h3>
-                    <p class="empty-desc">No entries match your search query "<strong>${escapeHtml(query)}</strong>".</p>
+                    <p class="empty-desc">No entries match your search query or media filter.</p>
                 </div>
             `;
+            updateFoldersToggleState();
             return;
         }
 
         html = filteredTree.map(renderNode).join('');
         treeContainer.innerHTML = html;
+        updateFoldersToggleState();
     }
 
     // Helper: extract all file leaves from hierarchical tree data
@@ -474,6 +510,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (node.type === 'file') {
                 if (node.url) fileLookupMap.set(node.url, node);
+                if (currentMediaTypeFilter !== 'all' && node.media_type !== currentMediaTypeFilter) {
+                    return;
+                }
                 if (!q || 
                     (node.name && node.name.toLowerCase().includes(q)) ||
                     (node.url && node.url.toLowerCase().includes(q)) ||
@@ -609,6 +648,353 @@ document.addEventListener('DOMContentLoaded', () => {
 
         treeContainer.innerHTML = `<div class="media-grid">${cardsHtml}</div>`;
         observeLazyThumbnails();
+    }
+
+    // -------------------------------------------------------------
+    // Clusters Rendering Engine & Deduplication Actions
+    // -------------------------------------------------------------
+    async function loadClustersData(autoRender = true) {
+        try {
+            const response = await authFetch('/api/clusters');
+            if (!response.ok) return;
+            const data = await response.json();
+            if (data.status === 'success') {
+                rawClustersData = data;
+                const totalClusters = (data.summary && data.summary.total_clusters) || 0;
+                if (clustersBadge) {
+                    if (totalClusters > 0) {
+                        clustersBadge.textContent = totalClusters;
+                        clustersBadge.style.display = 'inline-block';
+                    } else {
+                        clustersBadge.style.display = 'none';
+                    }
+                }
+                if (currentViewMode === 'clusters' && autoRender) {
+                    renderClustersView(rawClustersData);
+                }
+            }
+        } catch (err) {
+            console.debug('Error loading clusters:', err);
+        }
+    }
+
+    async function deleteUrls(urls, successToastTitle = 'Duplicates Removed') {
+        if (!urls || urls.length === 0) return;
+        try {
+            const response = await authFetch('/api/urls', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ urls })
+            });
+            const data = await response.json();
+            if (response.ok && (data.status === 'success' || data.status === 'deleted')) {
+                showToast(successToastTitle, `Deleted ${data.deleted_count} duplicate variant URL${data.deleted_count !== 1 ? 's' : ''}.`, 'success');
+                await loadTreeData();
+                await loadClustersData(true);
+            } else {
+                showToast('Deletion Failed', data.message || 'Could not delete URLs.', 'error');
+            }
+        } catch (err) {
+            console.error('Delete error:', err);
+            showToast('Network Error', 'Failed to communicate with server.', 'error');
+        }
+    }
+
+    function renderClustersView(data) {
+        if (!treeContainer) return;
+
+        try {
+            if (!data || !data.clusters || data.clusters.length === 0) {
+            treeContainer.innerHTML = `
+                <div class="empty-tree-state">
+                    <div class="empty-icon-wrap">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                        </svg>
+                    </div>
+                    <h3 class="empty-title">No Duplicates Found</h3>
+                    <p class="empty-desc">Your library is completely clean! Every media file is unique in filename, resolution, and appearance. When duplicate links or lower-resolution copies are added, they will appear here for easy 1-click cleanup.</p>
+                </div>
+            `;
+            if (footerCount) footerCount.textContent = '0 duplicate groups';
+            return;
+        }
+
+        const clusters = data.clusters;
+        const summary = data.summary || {};
+        const totalClusters = summary.total_clusters || clusters.length;
+        const totalVariants = summary.total_variants || 0;
+        const savingsBytes = summary.potential_savings_bytes || 0;
+
+        if (footerCount) {
+            footerCount.textContent = `${totalClusters} duplicate group${totalClusters !== 1 ? 's' : ''}`;
+        }
+
+        const explainerHtml = `
+            <div class="clusters-explainer">
+                <svg class="clusters-explainer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                <div class="clusters-explainer-text">
+                    <strong>How this works:</strong> Media Index found multiple copies of the same files across different CDNs or sizes. We automatically select the <strong>★ Best Quality (Keep)</strong> original for you. You can safely delete redundant copies below to save storage space.
+                </div>
+            </div>
+        `;
+
+        const heroHtml = `
+            <div class="clusters-hero">
+                <div class="clusters-hero-stats">
+                    <div class="clusters-stat-pill">
+                        <span class="clusters-stat-num">${totalClusters}</span>
+                        <span class="clusters-stat-label">Duplicate Groups</span>
+                    </div>
+                    <div class="clusters-stat-pill">
+                        <span class="clusters-stat-num">${totalVariants}</span>
+                        <span class="clusters-stat-label">Redundant Copies</span>
+                    </div>
+                    <div class="clusters-stat-pill">
+                        <span class="clusters-stat-num highlight-savings">${savingsBytes > 0 ? formatBytes(savingsBytes) : '0 B'}</span>
+                        <span class="clusters-stat-label">Potential Storage Savings</span>
+                    </div>
+                </div>
+                <div class="clusters-hero-actions">
+                    <button type="button" class="clean-all-btn" id="clean-all-clusters-btn" title="Delete all redundant copies across all groups, keeping only the best originals">
+                        <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                        <span>Clean All Duplicates (${totalVariants})</span>
+                    </button>
+                </div>
+            </div>
+        `;
+
+        function renderClusterItemRow(item, isCanonical) {
+            if (!item) return '';
+            const meta = item.metadata || {};
+            const rawName = item.name || item.filename || (item.url ? item.url.split('/').pop().split('?')[0] : 'media-file');
+            const ext = (rawName.includes('.') ? rawName.split('.').pop() : (item.extension || 'IMG')).toUpperCase();
+            const thumbUrl = `/api/thumbnail?url=${encodeURIComponent(item.url || '')}`;
+            
+            const width = item.width || (meta.dimensions && meta.dimensions[0]);
+            const height = item.height || (meta.dimensions && meta.dimensions[1]);
+            const sizeBytes = item.size_bytes ?? item.content_length ?? meta.size_bytes ?? meta.content_length;
+
+            let metaBadgesHtml = '';
+            if (width && height) {
+                metaBadgesHtml += `<span class="meta-badge dim-badge">${width}×${height}</span>`;
+            }
+            if (sizeBytes && !isNaN(sizeBytes) && Number(sizeBytes) > 0) {
+                metaBadgesHtml += `<span class="meta-badge size-badge">${formatBytes(sizeBytes)}</span>`;
+            }
+
+            const badgeHtml = isCanonical 
+                ? `<span class="badge-canonical">★ Best Quality (Keep)</span>`
+                : `<span class="badge-duplicate">Duplicate Copy</span>`;
+
+            let qualityLabel = '';
+            if (isCanonical) {
+                if (width && height) {
+                    qualityLabel = `<span class="cluster-item-quality is-winner">Best Resolution (${width}×${height})</span>`;
+                } else if (sizeBytes) {
+                    qualityLabel = `<span class="cluster-item-quality is-winner">Highest Quality (${formatBytes(sizeBytes)})</span>`;
+                } else {
+                    qualityLabel = `<span class="cluster-item-quality is-winner">Primary Master</span>`;
+                }
+            } else {
+                qualityLabel = `<span class="cluster-item-quality">Redundant Copy</span>`;
+            }
+
+            const actionHtml = isCanonical
+                ? `${qualityLabel}`
+                : `
+                    ${qualityLabel}
+                    <button type="button" class="delete-single-variant-btn" data-url="${escapeHtml(item.url || '')}" title="Delete this duplicate copy from library">
+                        <svg viewBox="0 0 24 24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                        <span>Delete</span>
+                    </button>
+                `;
+
+            return `
+                <div class="cluster-item-row ${isCanonical ? 'is-canonical' : ''}" data-url="${escapeHtml(item.url || '')}">
+                    <div class="cluster-item-thumb">
+                        <img class="lazy-thumb" data-src="${escapeHtml(thumbUrl)}" data-ext="${escapeHtml(ext)}" alt="${escapeHtml(rawName)}" loading="lazy">
+                    </div>
+                    <div class="cluster-item-info">
+                        <div class="cluster-item-title-row">
+                            ${badgeHtml}
+                            <a href="${escapeHtml(item.url || '#')}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(rawName)}">${escapeHtml(rawName)}</a>
+                        </div>
+                        <div class="cluster-item-meta-row">
+                            <span class="domain-type violet-label">${escapeHtml(item.domain || '')}</span>
+                            ${metaBadgesHtml}
+                            <small title="${escapeHtml(item.url || '')}">${escapeHtml(truncateUrl(item.url || ''))}</small>
+                        </div>
+                    </div>
+                    <div class="cluster-item-actions">
+                        ${actionHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        const clusterCardsHtml = clusters.map(cluster => {
+            const items = Array.isArray(cluster.items) ? cluster.items : [];
+            const canonical = cluster.canonical || items.find(it => it.is_canonical) || items[0] || {};
+            const duplicates = cluster.duplicates || items.filter(it => !it.is_canonical) || (items.length > 1 ? items.slice(1) : []);
+            const savings = cluster.potential_savings_bytes ?? cluster.savings_bytes ?? 0;
+            const confidence = cluster.confidence || 'medium';
+            
+            // Human-readable match badge & explanation
+            let matchBadgeText = 'Resolution Variant';
+            let matchExplanation = 'Same image with different sizes or CDN mirrors';
+            if (confidence === 'high') {
+                matchBadgeText = 'Exact Match';
+                matchExplanation = 'Identical file content and size across links';
+            } else if (confidence === 'low') {
+                matchBadgeText = 'Visual Match';
+                matchExplanation = 'Visually identical pictures detected via image fingerprint';
+            }
+
+            const canonicalRowHtml = renderClusterItemRow(canonical, true);
+            const duplicatesRowsHtml = duplicates.map(d => renderClusterItemRow(d, false)).join('');
+
+            return `
+                <div class="cluster-card" data-cluster-id="${escapeHtml(cluster.cluster_id || '')}">
+                    <div class="cluster-header">
+                        <div class="cluster-header-left">
+                            <span class="cluster-confidence-badge confidence-${escapeHtml(confidence)}">${escapeHtml(matchBadgeText)}</span>
+                            <span class="cluster-reason-text">${escapeHtml(matchExplanation)}</span>
+                        </div>
+                        <div class="cluster-header-right">
+                            ${savings > 0 ? `<span class="cluster-savings-pill">Save ~${formatBytes(savings)}</span>` : ''}
+                            <button type="button" class="keep-both-btn" data-cluster-id="${escapeHtml(cluster.cluster_id || '')}" title="Keep all copies in this group and hide from duplicates list">
+                                <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                                <span>Keep Both</span>
+                            </button>
+                            <button type="button" class="clean-cluster-btn" data-cluster-id="${escapeHtml(cluster.cluster_id || '')}" title="Keep best quality version and remove ${duplicates.length} redundant copies in this group">
+                                <svg viewBox="0 0 24 24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                </svg>
+                                <span>Keep Best & Delete ${duplicates.length} Cop${duplicates.length > 1 ? 'ies' : 'y'}</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="cluster-items">
+                        ${canonicalRowHtml}
+                        ${duplicatesRowsHtml}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        treeContainer.innerHTML = `
+            <div class="clusters-view">
+                ${explainerHtml}
+                ${heroHtml}
+                ${clusterCardsHtml}
+            </div>
+        `;
+
+        observeLazyThumbnails();
+
+        // Wire up Clean All Variants button
+        const cleanAllBtn = treeContainer.querySelector('#clean-all-clusters-btn');
+        if (cleanAllBtn) {
+            cleanAllBtn.addEventListener('click', () => {
+                const allDuplicateUrls = [];
+                clusters.forEach(c => {
+                    const cItems = Array.isArray(c.items) ? c.items : [];
+                    const cDups = c.duplicates || cItems.filter(it => !it.is_canonical) || [];
+                    cDups.forEach(d => {
+                        if (d && d.url) allDuplicateUrls.push(d.url);
+                    });
+                });
+                const uniqueUrls = Array.from(new Set(allDuplicateUrls));
+                if (uniqueUrls.length === 0) {
+                    showToast('No Duplicates', 'No redundant copies found to clean.', 'info');
+                    return;
+                }
+                if (confirm(`Keep all best quality originals and remove all ${uniqueUrls.length} redundant copies across all groups? This will free up storage space.`)) {
+                    deleteUrls(uniqueUrls, 'All Duplicates Cleaned');
+                }
+            });
+        }
+
+        // Wire up per-cluster Clean Variants buttons
+        treeContainer.querySelectorAll('.clean-cluster-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const clusterId = btn.getAttribute('data-cluster-id');
+                const cluster = clusters.find(c => c.cluster_id === clusterId);
+                if (!cluster) return;
+                const cItems = Array.isArray(cluster.items) ? cluster.items : [];
+                const cDups = cluster.duplicates || cItems.filter(it => !it.is_canonical) || [];
+                const urls = cDups.map(d => d.url).filter(Boolean);
+                const uniqueUrls = Array.from(new Set(urls));
+                if (uniqueUrls.length === 0) return;
+                if (confirm(`Keep the best quality original and remove ${uniqueUrls.length} redundant copy(ies) from this group?`)) {
+                    deleteUrls(uniqueUrls, 'Group Cleaned');
+                }
+            });
+        });
+
+        // Wire up per-cluster Keep Both (Dismiss) buttons
+        treeContainer.querySelectorAll('.keep-both-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const clusterId = btn.getAttribute('data-cluster-id');
+                if (!clusterId) return;
+
+                btn.disabled = true;
+                try {
+                    const response = await authFetch('/api/clusters/dismiss', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ cluster_id: clusterId })
+                    });
+                    const res = await response.json();
+                    if (response.ok && res.status === 'success') {
+                        showToast('Group Preserved', 'Both files are kept and removed from duplicates list.', 'success');
+                        await loadClustersData(true);
+                    } else {
+                        showToast('Error', res.message || 'Could not preserve duplicate group.', 'error');
+                        btn.disabled = false;
+                    }
+                } catch (err) {
+                    console.error('Keep both error:', err);
+                    showToast('Network Error', 'Failed to communicate with server.', 'error');
+                    btn.disabled = false;
+                }
+            });
+        });
+
+        // Wire up single duplicate variant delete buttons
+        treeContainer.querySelectorAll('.delete-single-variant-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const url = btn.getAttribute('data-url');
+                if (!url) return;
+                if (confirm(`Remove this duplicate copy from your library?\n${url}`)) {
+                    deleteUrls([url], 'Duplicate Removed');
+                }
+            });
+        });
+        } catch (err) {
+            console.error('Error rendering clusters view:', err);
+            treeContainer.innerHTML = `
+                <div class="empty-tree-state">
+                    <h3 class="empty-title">Error Displaying Duplicates</h3>
+                    <p class="empty-desc">An error occurred while displaying duplicate groups: ${escapeHtml(err.message)}</p>
+                </div>
+            `;
+        }
     }
 
     // IntersectionObserver for Lazy-Loaded Thumbnails
@@ -832,7 +1218,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // View Switching and Dispatch
     function setViewMode(mode) {
-        if (mode !== 'tree' && mode !== 'grid') mode = 'tree';
+        if (mode !== 'tree' && mode !== 'grid' && mode !== 'clusters') mode = 'tree';
         currentViewMode = mode;
         try {
             localStorage.setItem(VIEW_MODE_KEY, mode);
@@ -847,13 +1233,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (viewTreeBtn) viewTreeBtn.classList.toggle('active', mode === 'tree');
         if (viewGridBtn) viewGridBtn.classList.toggle('active', mode === 'grid');
-        if (librarySection) librarySection.classList.toggle('is-grid-mode', mode === 'grid');
-        if (tableHead) tableHead.style.display = mode === 'grid' ? 'none' : '';
+        if (viewClustersBtn) viewClustersBtn.classList.toggle('active', mode === 'clusters');
+        if (librarySection) {
+            librarySection.classList.toggle('is-grid-mode', mode === 'grid');
+            librarySection.classList.toggle('is-clusters-mode', mode === 'clusters');
+        }
+        if (tableHead) tableHead.style.display = (mode === 'grid' || mode === 'clusters') ? 'none' : '';
 
         if (librarySubtitle) {
-            librarySubtitle.textContent = mode === 'grid' 
-                ? 'Visual gallery of analyzed media files' 
-                : 'Analyzed files arranged by source and path';
+            if (mode === 'grid') {
+                librarySubtitle.textContent = 'Visual gallery of analyzed media files';
+            } else if (mode === 'clusters') {
+                librarySubtitle.textContent = 'Review duplicate media, keep the best version, and free up space';
+            } else {
+                librarySubtitle.textContent = 'Analyzed files arranged by source and path';
+            }
         }
 
         renderActiveView();
@@ -862,6 +1256,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderActiveView() {
         if (currentViewMode === 'grid') {
             renderGridView(rawTreeData, currentSearchQuery);
+        } else if (currentViewMode === 'clusters') {
+            if (!rawClustersData) {
+                loadClustersData(true);
+            } else {
+                renderClustersView(rawClustersData);
+            }
         } else {
             renderTree(rawTreeData, currentSearchQuery);
         }
@@ -897,6 +1297,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (resetDbBtn) resetDbBtn.disabled = !hasRecords;
                 if (expandAllBtn) expandAllBtn.disabled = !hasRecords;
                 if (collapseAllBtn) collapseAllBtn.disabled = !hasRecords;
+                if (toggleFoldersBtn) toggleFoldersBtn.disabled = !hasRecords;
                 if (copyTreeTextBtn) copyTreeTextBtn.disabled = !hasRecords;
                 if (treeSearchInput) {
                     treeSearchInput.disabled = !hasRecords;
@@ -906,7 +1307,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
 
+                updateMediaTypeCounts();
                 renderActiveView();
+                loadClustersData(false);
             }
         } catch (err) {
             console.error('Error loading tree data:', err);
@@ -1040,6 +1443,13 @@ document.addEventListener('DOMContentLoaded', () => {
         viewGridBtn.addEventListener('click', () => setViewMode('grid'));
     }
 
+    if (viewClustersBtn) {
+        viewClustersBtn.addEventListener('click', () => {
+            setViewMode('clusters');
+            loadClustersData(true);
+        });
+    }
+
     if (treeSearchInput) {
         treeSearchInput.addEventListener('input', (e) => {
             currentSearchQuery = e.target.value;
@@ -1062,11 +1472,159 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Expand All / Collapse All
+    // -------------------------------------------------------------
+    // Toolbar Show/Hide Actions: Smart Folders, Focus Mode, Filters
+    // -------------------------------------------------------------
+
+    // Media Type Quick Filters
+    function updateMediaTypeCounts() {
+        const counts = { image: 0, video: 0, gif: 0 };
+        function walk(node) {
+            if (node.type === 'file') {
+                const m = node.media_type || 'image';
+                if (counts[m] !== undefined) counts[m]++;
+            }
+            if (node.children) node.children.forEach(walk);
+        }
+        if (Array.isArray(rawTreeData)) rawTreeData.forEach(walk);
+
+        if (filterCountImage) filterCountImage.textContent = counts.image;
+        if (filterCountVideo) filterCountVideo.textContent = counts.video;
+        if (filterCountGif) filterCountGif.textContent = counts.gif;
+    }
+
+    function setMediaTypeFilter(filterType) {
+        currentMediaTypeFilter = filterType;
+        if (mediaTypeFilters) {
+            mediaTypeFilters.querySelectorAll('.filter-pill').forEach(pill => {
+                pill.classList.toggle('active', pill.getAttribute('data-filter') === filterType);
+            });
+        }
+
+        if (activeFilterBadge) {
+            if (filterType !== 'all') {
+                const label = filterType === 'image' ? 'Images' : (filterType === 'video' ? 'Videos' : 'GIFs');
+                activeFilterBadge.textContent = `${label} Only ✕`;
+                activeFilterBadge.title = 'Click to clear filter';
+                activeFilterBadge.style.display = 'inline-block';
+            } else {
+                activeFilterBadge.style.display = 'none';
+            }
+        }
+
+        renderActiveView();
+    }
+
+    if (mediaTypeFilters) {
+        mediaTypeFilters.addEventListener('click', (e) => {
+            const pill = e.target.closest('.filter-pill');
+            if (!pill) return;
+            const filterType = pill.getAttribute('data-filter') || 'all';
+            setMediaTypeFilter(filterType);
+        });
+    }
+
+    if (activeFilterBadge) {
+        activeFilterBadge.addEventListener('click', () => {
+            setMediaTypeFilter('all');
+            showToast('Filter Cleared', 'Showing all media files.', 'info', 1500);
+        });
+    }
+
+    // Smart Show/Hide All Folders Toggle
+    function updateFoldersToggleState() {
+        if (!treeContainer || !toggleFoldersBtn) return;
+        const allDetails = treeContainer.querySelectorAll('details');
+        if (!allDetails.length) {
+            toggleFoldersBtn.disabled = true;
+            return;
+        }
+        toggleFoldersBtn.disabled = false;
+        const closedCount = Array.from(allDetails).filter(d => !d.open).length;
+        const iconSvg = toggleFoldersBtn.querySelector('.icon-toggle-folders');
+        if (closedCount > 0) {
+            if (toggleFoldersText) toggleFoldersText.textContent = 'Expand All';
+            toggleFoldersBtn.title = `Show all folders (${closedCount} currently closed) — Shift+E`;
+            if (iconSvg) {
+                iconSvg.innerHTML = `<polyline points="7 13 12 18 17 13"></polyline><polyline points="7 6 12 11 17 6"></polyline>`;
+            }
+        } else {
+            if (toggleFoldersText) toggleFoldersText.textContent = 'Collapse All';
+            toggleFoldersBtn.title = `Hide all folders (all currently open) — Shift+E`;
+            if (iconSvg) {
+                iconSvg.innerHTML = `<polyline points="17 11 12 6 7 11"></polyline><polyline points="17 18 12 13 7 18"></polyline>`;
+            }
+        }
+    }
+
+    if (toggleFoldersBtn) {
+        toggleFoldersBtn.addEventListener('click', () => {
+            const allDetails = treeContainer.querySelectorAll('details');
+            if (!allDetails.length) return;
+            const hasClosed = Array.from(allDetails).some(d => !d.open);
+            allDetails.forEach(d => d.open = hasClosed);
+            updateFoldersToggleState();
+            if (hasClosed) {
+                showToast('All Folders Expanded', `Opened all ${allDetails.length} directory branches.`, 'info', 1500);
+            } else {
+                showToast('All Folders Collapsed', `Closed all ${allDetails.length} directory branches.`, 'info', 1500);
+            }
+        });
+    }
+
+    if (treeContainer) {
+        treeContainer.addEventListener('toggle', (e) => {
+            if (e.target && e.target.tagName === 'DETAILS') {
+                updateFoldersToggleState();
+            }
+        }, true);
+    }
+
+    // Focus Mode: Show / Hide Top URL Analyzer & Hero Card
+    function setFocusMode(enable, silent = false) {
+        isFocusMode = Boolean(enable);
+        try {
+            localStorage.setItem(FOCUS_MODE_KEY, isFocusMode ? '1' : '0');
+        } catch {}
+
+        if (pageWrap) {
+            pageWrap.classList.toggle('is-focus-mode', isFocusMode);
+        }
+        if (toggleFocusModeBtn) {
+            toggleFocusModeBtn.classList.toggle('is-active', isFocusMode);
+            const expandIcon = toggleFocusModeBtn.querySelector('.focus-icon-expand');
+            const collapseIcon = toggleFocusModeBtn.querySelector('.focus-icon-collapse');
+            if (expandIcon) expandIcon.style.display = isFocusMode ? 'none' : 'block';
+            if (collapseIcon) collapseIcon.style.display = isFocusMode ? 'block' : 'none';
+            if (focusModeText) {
+                focusModeText.textContent = isFocusMode ? 'Exit Focus' : 'Focus';
+            }
+            toggleFocusModeBtn.title = isFocusMode 
+                ? 'Show URL analyzer card (Shift+F)' 
+                : 'Hide URL analyzer card to maximize folder view (Shift+F)';
+        }
+
+        if (!silent) {
+            if (isFocusMode) {
+                showToast('Focus Mode Active', 'Top analyzer hidden. Workspace maximized.', 'info', 2000);
+            } else {
+                showToast('Focus Mode Exited', 'URL analyzer restored.', 'info', 2000);
+            }
+        }
+    }
+
+    if (toggleFocusModeBtn) {
+        toggleFocusModeBtn.addEventListener('click', () => {
+            setFocusMode(!isFocusMode);
+        });
+    }
+
+    // Expand All / Collapse All (Legacy compatibility)
     if (expandAllBtn) {
         expandAllBtn.addEventListener('click', () => {
             const detailsElements = treeContainer.querySelectorAll('details');
             detailsElements.forEach(d => d.open = true);
+            updateFoldersToggleState();
             showToast('Expanded', 'All directory branches opened.', 'info', 2000);
         });
     }
@@ -1075,6 +1633,7 @@ document.addEventListener('DOMContentLoaded', () => {
         collapseAllBtn.addEventListener('click', () => {
             const detailsElements = treeContainer.querySelectorAll('details');
             detailsElements.forEach(d => d.open = false);
+            updateFoldersToggleState();
             showToast('Collapsed', 'All directory branches closed.', 'info', 2000);
         });
     }
@@ -1515,7 +2074,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // Shortcut: Toggle View Mode (Shift+T for Tree, Shift+G for Grid)
+        // Shortcut: Toggle View Mode (Shift+T for Tree, Shift+G for Grid, Shift+C for Clusters)
         if (e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && !isTyping) {
             if (e.key === 'T' || e.key === 't') {
                 e.preventDefault();
@@ -1527,6 +2086,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.preventDefault();
                 setViewMode('grid');
                 showToast('View Changed', 'Switched to Grid View', 'info', 1500);
+                return;
+            }
+            if (e.key === 'C' || e.key === 'c') {
+                e.preventDefault();
+                setViewMode('clusters');
+                loadClustersData(true);
+                showToast('View Changed', 'Switched to Duplicates View', 'info', 1500);
+                return;
+            }
+            if (e.key === 'E' || e.key === 'e') {
+                e.preventDefault();
+                if (toggleFoldersBtn && !toggleFoldersBtn.disabled) {
+                    toggleFoldersBtn.click();
+                }
+                return;
+            }
+            if (e.key === 'F' || e.key === 'f') {
+                e.preventDefault();
+                if (toggleFocusModeBtn) {
+                    toggleFocusModeBtn.click();
+                }
                 return;
             }
         }
@@ -1580,6 +2160,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------
     // 11. Initial Load
     // -------------------------------------------------------------
+    setFocusMode(isFocusMode, true);
     setViewMode(currentViewMode);
     loadTreeData();
 });

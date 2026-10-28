@@ -441,6 +441,106 @@ class TestAppRoutes(unittest.TestCase):
         self.assertIn('.xml', html)
         self.assertIn('.txt', html)
 
+    def test_get_clusters_endpoint_empty(self):
+        res = self.client.get("/api/clusters")
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertEqual(data["status"], "success")
+        self.assertEqual(data["summary"]["total_clusters"], 0)
+        self.assertEqual(data["clusters"], [])
+
+    def test_get_clusters_and_delete_urls_endpoints(self):
+        # 1. Add two duplicate URLs across mirrors
+        url1 = "https://cdn1.site.com/assets/poster.jpg"
+        url2 = "https://cdn2.site.com/assets/poster.jpg?utm_source=twitter"
+
+        self.client.post("/api/urls", json={"url": url1})
+        self.client.post("/api/urls", json={"url": url2})
+
+        # Update metadata to give them identical sizes
+        db.update_url_metadata(url1, {"content_length": 150000, "content_type": "image/jpeg", "width": 800, "height": 600})
+        db.update_url_metadata(url2, {"content_length": 150000, "content_type": "image/jpeg", "width": 800, "height": 600})
+
+        # 2. Check clusters endpoint
+        res = self.client.get("/api/clusters")
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertEqual(data["status"], "success")
+        self.assertEqual(data["summary"]["total_clusters"], 1)
+        self.assertEqual(data["summary"]["total_duplicate_urls"], 1)
+        self.assertEqual(data["summary"]["total_savings_bytes"], 150000)
+
+        # Confidence filter check
+        res_high = self.client.get("/api/clusters?confidence=high")
+        self.assertEqual(len(res_high.get_json()["clusters"]), 1)
+
+        res_low = self.client.get("/api/clusters?confidence=low")
+        self.assertEqual(len(res_low.get_json()["clusters"]), 0)
+
+        # 3. Delete the redundant mirror URL
+        del_res = self.client.delete("/api/urls", json={"urls": [url2]})
+        self.assertEqual(del_res.status_code, 200)
+        self.assertEqual(del_res.get_json()["deleted_count"], 1)
+
+        # 4. Now clusters should be 0
+        res_after = self.client.get("/api/clusters")
+        self.assertEqual(res_after.get_json()["summary"]["total_clusters"], 0)
+
+    def test_clusters_view_mode_in_template(self):
+        res = self.client.get("/")
+        self.assertEqual(res.status_code, 200)
+        html = res.data.decode("utf-8")
+        self.assertIn('id="view-clusters-btn"', html)
+        self.assertIn('id="clusters-badge"', html)
+        self.assertIn('data-mode="clusters"', html)
+
+
+    def test_dismiss_cluster_endpoint_keep_both(self):
+        # 1. Add two duplicate URLs
+        url1 = "https://cdn.example.com/photos/scene.jpg"
+        url2 = "https://backup.example.com/photos/scene.jpg"
+        self.client.post("/api/urls", json={"url": url1})
+        self.client.post("/api/urls", json={"url": url2})
+
+        db.update_url_metadata(url1, {"content_length": 200000, "content_type": "image/jpeg", "width": 1920, "height": 1080})
+        db.update_url_metadata(url2, {"content_length": 200000, "content_type": "image/jpeg", "width": 1920, "height": 1080})
+
+        # 2. Clusters has 1 group
+        res = self.client.get("/api/clusters")
+        self.assertEqual(res.status_code, 200)
+        clusters = res.get_json()["clusters"]
+        self.assertEqual(len(clusters), 1)
+        cluster_id = clusters[0]["cluster_id"]
+
+        # 3. User chooses 'Keep Both' (dismiss cluster)
+        dismiss_res = self.client.post("/api/clusters/dismiss", json={"cluster_id": cluster_id})
+        self.assertEqual(dismiss_res.status_code, 200)
+        self.assertEqual(dismiss_res.get_json()["status"], "success")
+
+        # 4. GET /api/clusters should now report 0 duplicate groups
+        res_after = self.client.get("/api/clusters")
+        self.assertEqual(res_after.get_json()["summary"]["total_clusters"], 0)
+
+        # 5. Tree view still has BOTH URLs intact (neither was deleted)
+        tree_res = self.client.get("/api/tree")
+        self.assertEqual(tree_res.get_json()["stats"]["total_urls"], 2)
+
+        # 6. Reset dismissed clusters restores the cluster
+        reset_res = self.client.post("/api/clusters/reset-dismissed")
+        self.assertEqual(reset_res.status_code, 200)
+        self.assertEqual(reset_res.get_json()["status"], "success")
+
+        res_restored = self.client.get("/api/clusters")
+        self.assertEqual(res_restored.get_json()["summary"]["total_clusters"], 1)
+
+    def test_dismiss_cluster_endpoint_validation(self):
+        res1 = self.client.post("/api/clusters/dismiss", json={})
+        self.assertEqual(res1.status_code, 400)
+        self.assertIn("cluster_id string is required", res1.get_json()["message"])
+
+        res2 = self.client.post("/api/clusters/dismiss", json={"cluster_id": 12345})
+        self.assertEqual(res2.status_code, 400)
+
 
 if __name__ == "__main__":
     unittest.main()

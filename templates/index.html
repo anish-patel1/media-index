@@ -17,7 +17,7 @@
         href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
         rel="stylesheet">
     <!-- Main Stylesheet -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=4.6.0">
 </head>
 
 <body>
@@ -72,9 +72,9 @@
         </header>
 
         <!-- Page Wrap -->
-        <div class="page-wrap">
+        <div class="page-wrap" id="page-wrap">
             <!-- Hero Heading & Live Collection Stats -->
-            <section class="page-heading">
+            <section class="page-heading" id="page-heading-section">
                 <div class="heading-copy">
                     <p class="eyebrow"><span class="eyebrow-line"></span> DIRECTORY ANALYZER</p>
                 </div>
@@ -89,7 +89,7 @@
             </section>
 
             <!-- URL Capture Card -->
-            <section class="capture-card" aria-labelledby="files-title">
+            <section class="capture-card" id="capture-card-section" aria-labelledby="files-title">
                 <form id="url-form" class="capture-form" onsubmit="return false;">
                     <span class="input-link-icon" aria-hidden="true">
                         <svg viewBox="0 0 24 24">
@@ -142,14 +142,16 @@
             <!-- Library / Structured Tree-Table Section -->
             <section class="library-section" aria-labelledby="files-title">
                 <div class="library-toolbar">
-                    <div class="library-title">
-                        <h2 id="files-title">Folder structure <span class="soft-count" id="tree-count-badge">0</span>
-                        </h2>
+                    <div class="library-title-area">
+                        <div class="library-title-row">
+                            <h2 id="files-title">Folder structure <span class="soft-count" id="tree-count-badge">0</span></h2>
+                            <span class="active-filter-badge" id="active-filter-badge" style="display: none;"></span>
+                        </div>
                         <p id="library-subtitle">Analyzed files arranged by source and path</p>
                     </div>
 
                     <div class="toolbar-actions">
-                        <!-- View Mode Toggle (Tree / Grid) -->
+                        <!-- 1. View Mode Segmented Control -->
                         <div class="view-mode-toggle" id="view-mode-toggle" role="group" aria-label="View Mode">
                             <button type="button" class="view-toggle-btn active" id="view-tree-btn" data-mode="tree"
                                 title="Tree View (Shift+T)">
@@ -173,10 +175,37 @@
                                 </svg>
                                 <span>Grid</span>
                             </button>
+                            <button type="button" class="view-toggle-btn" id="view-clusters-btn" data-mode="clusters"
+                                title="Duplicate Finder & Cleanup (Shift+C)">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                </svg>
+                                <span>Duplicates</span>
+                                <span class="clusters-nav-badge" id="clusters-badge" style="display: none;">0</span>
+                            </button>
                         </div>
 
-                        <!-- Search Box -->
-                        <label class="search-box" for="tree-search-input">
+                        <span class="toolbar-divider hide-on-clusters"></span>
+
+                        <!-- 2. Media Type Filters (Show / Hide by Type) -->
+                        <div class="media-type-filters hide-on-clusters" id="media-type-filters" role="group" aria-label="Media Filters">
+                            <button type="button" class="filter-pill active" data-filter="all" title="Show all media files">All</button>
+                            <button type="button" class="filter-pill" data-filter="image" title="Show only Images">
+                                <span class="filter-dot dot-image"></span>Images <span class="filter-count" id="filter-count-image">0</span>
+                            </button>
+                            <button type="button" class="filter-pill" data-filter="video" title="Show only Videos">
+                                <span class="filter-dot dot-video"></span>Videos <span class="filter-count" id="filter-count-video">0</span>
+                            </button>
+                            <button type="button" class="filter-pill" data-filter="gif" title="Show only GIFs">
+                                <span class="filter-dot dot-gif"></span>GIFs <span class="filter-count" id="filter-count-gif">0</span>
+                            </button>
+                        </div>
+
+                        <span class="toolbar-divider hide-on-clusters"></span>
+
+                        <!-- 3. Search Box -->
+                        <label class="search-box hide-on-clusters" for="tree-search-input">
                             <svg viewBox="0 0 24 24" aria-hidden="true">
                                 <circle cx="10.8" cy="10.8" r="6.8" />
                                 <path d="m16 16 4.5 4.5" />
@@ -188,39 +217,52 @@
                                 style="display: none;">✕</button>
                         </label>
 
-                        <!-- Expand All Branches (Universal Expand Outward Icon) -->
-                        <button type="button" id="expand-all-btn" class="tree-action-icon-btn tree-only-action"
-                            title="Expand all folders" disabled>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <polyline points="15 3 21 3 21 9"></polyline>
-                                <polyline points="9 21 3 21 3 15"></polyline>
-                                <line x1="21" y1="3" x2="14" y2="10"></line>
-                                <line x1="3" y1="21" x2="10" y2="14"></line>
-                            </svg>
-                            <span>Expand</span>
-                        </button>
+                        <span class="toolbar-divider"></span>
 
-                        <!-- Collapse All Branches (Universal Collapse Inward Icon) -->
-                        <button type="button" id="collapse-all-btn" class="tree-action-icon-btn tree-only-action"
-                            title="Collapse all folders" disabled>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <polyline points="4 14 10 14 10 20"></polyline>
-                                <polyline points="20 10 14 10 14 4"></polyline>
-                                <line x1="14" y1="10" x2="21" y2="3"></line>
-                                <line x1="3" y1="21" x2="10" y2="14"></line>
-                            </svg>
-                            <span>Collapse</span>
-                        </button>
+                        <!-- 4. Quick Action Buttons -->
+                        <div class="toolbar-buttons-group">
+                            <!-- Smart Show/Hide All Folders Toggle (Tree Only) -->
+                            <button type="button" id="toggle-tree-folders-btn" class="tree-action-icon-btn tree-only-action"
+                                title="Show / Hide all folders (Shift+E)" disabled>
+                                <svg class="icon-toggle-folders" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <polyline points="7 13 12 18 17 13"></polyline>
+                                    <polyline points="7 6 12 11 17 6"></polyline>
+                                </svg>
+                                <span id="toggle-folders-text">Expand All</span>
+                            </button>
 
-                        <!-- Copy ASCII Tree Diagram -->
-                        <button type="button" id="copy-tree-text-btn" class="tree-action-icon-btn tree-only-action"
-                            title="Copy ASCII tree diagram to clipboard" disabled>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                            </svg>
-                            <span>Copy Tree</span>
-                        </button>
+                            <!-- Legacy Expand/Collapse buttons kept for compatibility (hidden visually) -->
+                            <button type="button" id="expand-all-btn" class="tree-action-icon-btn tree-only-action" style="display: none;" disabled aria-hidden="true"></button>
+                            <button type="button" id="collapse-all-btn" class="tree-action-icon-btn tree-only-action" style="display: none;" disabled aria-hidden="true"></button>
+
+                            <!-- Copy ASCII Tree Diagram (Tree Only) -->
+                            <button type="button" id="copy-tree-text-btn" class="tree-action-icon-btn tree-only-action"
+                                title="Copy ASCII tree diagram to clipboard" disabled>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                </svg>
+                                <span>Copy Tree</span>
+                            </button>
+
+                            <!-- Focus Mode: Show/Hide URL Capture Card -->
+                            <button type="button" id="toggle-focus-mode-btn" class="tree-action-icon-btn focus-mode-btn"
+                                title="Show / Hide URL analyzer form to maximize folder view (Shift+F)">
+                                <svg class="focus-icon-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <polyline points="15 3 21 3 21 9"></polyline>
+                                    <polyline points="9 21 3 21 3 15"></polyline>
+                                    <line x1="21" y1="3" x2="14" y2="10"></line>
+                                    <line x1="3" y1="21" x2="10" y2="14"></line>
+                                </svg>
+                                <svg class="focus-icon-collapse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display: none;">
+                                    <polyline points="4 14 10 14 10 20"></polyline>
+                                    <polyline points="20 10 14 10 14 4"></polyline>
+                                    <line x1="14" y1="10" x2="21" y2="3"></line>
+                                    <line x1="3" y1="21" x2="10" y2="14"></line>
+                                </svg>
+                                <span id="focus-mode-text">Focus</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -403,7 +445,7 @@
     </div>
 
     <!-- Application Script -->
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}?v=4.6.0"></script>
 </body>
 
 </html>
