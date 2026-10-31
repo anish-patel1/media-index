@@ -73,6 +73,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const cancelResetBtn = document.getElementById('cancel-reset-btn');
     const confirmResetBtn = document.getElementById('confirm-reset-btn');
 
+    // Generic Confirmation Modal
+    const confirmModal = document.getElementById('confirm-modal');
+    const confirmModalTitle = document.getElementById('confirm-modal-title');
+    const confirmModalBody = document.getElementById('confirm-modal-body');
+    const confirmModalIcon = document.getElementById('confirm-modal-icon');
+    const confirmModalOkBtn = document.getElementById('confirm-modal-ok-btn');
+    const confirmModalCancelBtn = document.getElementById('confirm-modal-cancel-btn');
+
     // Tree & Search Toolbar
     const treeContainer = document.getElementById('tree-container');
     const treeSearchInput = document.getElementById('tree-search-input');
@@ -144,8 +152,13 @@ document.addEventListener('DOMContentLoaded', () => {
         info: `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`
     };
 
-    function showToast(title, message, type = 'info', duration = 4000) {
+    function showToast(title, message, type = 'info', duration = null) {
         if (!toastContainer) return;
+
+        // Auto-dismiss tiering: Standard 3500ms vs Important/Error 6500ms
+        const effectiveDuration = duration !== null && duration !== undefined 
+            ? duration 
+            : (type === 'error' ? 6500 : 3500);
 
         const toast = document.createElement('div');
         toast.className = `toast ${type}`;
@@ -163,7 +176,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <line x1="6" y1="6" x2="18" y2="18"></line>
                 </svg>
             </button>
-            <div class="toast-progress" style="animation-duration: ${duration}ms;"></div>
+            <div class="toast-progress" style="animation-duration: ${effectiveDuration}ms;"></div>
         `;
 
         const dismiss = () => {
@@ -177,15 +190,102 @@ document.addEventListener('DOMContentLoaded', () => {
         const closeBtn = toast.querySelector('.toast-close-btn');
         if (closeBtn) closeBtn.addEventListener('click', dismiss);
 
-        const autoTimer = setTimeout(dismiss, duration);
+        let remainingTime = effectiveDuration;
+        let timerStart = Date.now();
+        let autoTimer = setTimeout(dismiss, effectiveDuration);
 
         toast.addEventListener('mouseenter', () => {
             clearTimeout(autoTimer);
+            remainingTime -= (Date.now() - timerStart);
+            if (remainingTime < 1000) remainingTime = 1500;
             const progress = toast.querySelector('.toast-progress');
             if (progress) progress.style.animationPlayState = 'paused';
         });
 
+        toast.addEventListener('mouseleave', () => {
+            clearTimeout(autoTimer);
+            timerStart = Date.now();
+            autoTimer = setTimeout(dismiss, remainingTime);
+            const progress = toast.querySelector('.toast-progress');
+            if (progress) progress.style.animationPlayState = 'running';
+        });
+
         toastContainer.appendChild(toast);
+    }
+
+    // -------------------------------------------------------------
+    // 3b. Generic Confirmation Modal Controller (Promise-based)
+    // -------------------------------------------------------------
+    let activeConfirmResolver = null;
+
+    function closeConfirmModal(result = false) {
+        if (!confirmModal) return;
+        confirmModal.classList.remove('active');
+        if (activeConfirmResolver) {
+            const resolve = activeConfirmResolver;
+            activeConfirmResolver = null;
+            resolve(result);
+        }
+    }
+
+    function showConfirmModal({
+        title = 'Confirm Action',
+        body = 'Are you sure you want to proceed?',
+        confirmText = 'Confirm',
+        cancelText = 'Cancel',
+        danger = true,
+        iconType = 'danger'
+    } = {}) {
+        if (!confirmModal) {
+            return Promise.resolve(window.confirm(body));
+        }
+
+        if (confirmModalTitle) confirmModalTitle.textContent = title;
+        if (confirmModalBody) confirmModalBody.textContent = body;
+        if (confirmModalOkBtn) {
+            confirmModalOkBtn.textContent = confirmText;
+            confirmModalOkBtn.className = danger ? 'button button-danger' : 'button button-primary';
+        }
+        if (confirmModalCancelBtn) confirmModalCancelBtn.textContent = cancelText;
+
+        if (confirmModalIcon) {
+            confirmModalIcon.className = `modal-icon-wrap ${iconType === 'danger' ? 'danger' : 'primary'}`;
+            if (iconType === 'danger') {
+                confirmModalIcon.innerHTML = `
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                `;
+            } else {
+                confirmModalIcon.innerHTML = `
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                `;
+            }
+        }
+
+        confirmModal.classList.add('active');
+
+        return new Promise((resolve) => {
+            activeConfirmResolver = resolve;
+        });
+    }
+
+    if (confirmModalOkBtn) {
+        confirmModalOkBtn.addEventListener('click', () => closeConfirmModal(true));
+    }
+    if (confirmModalCancelBtn) {
+        confirmModalCancelBtn.addEventListener('click', () => closeConfirmModal(false));
+    }
+    if (confirmModal) {
+        confirmModal.addEventListener('click', (e) => {
+            if (e.target === confirmModal) closeConfirmModal(false);
+        });
     }
 
     // -------------------------------------------------------------
@@ -985,7 +1085,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Wire up Clean All Variants button
         const cleanAllBtn = treeContainer.querySelector('#clean-all-clusters-btn');
         if (cleanAllBtn) {
-            cleanAllBtn.addEventListener('click', () => {
+            cleanAllBtn.addEventListener('click', async () => {
                 const allDuplicateUrls = [];
                 clusters.forEach(c => {
                     const cItems = Array.isArray(c.items) ? c.items : [];
@@ -999,7 +1099,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     showToast('No Duplicates', 'No redundant copies found to clean.', 'info');
                     return;
                 }
-                if (confirm(`Resolve all ${clusters.length} duplicate groups by keeping the best version of each and permanently deleting ${uniqueUrls.length} redundant ${uniqueUrls.length === 1 ? 'copy' : 'copies'}?`)) {
+                const confirmed = await showConfirmModal({
+                    title: 'Resolve All Duplicates',
+                    body: `Resolve all ${clusters.length} duplicate groups by keeping the best version of each and permanently deleting ${uniqueUrls.length} redundant ${uniqueUrls.length === 1 ? 'copy' : 'copies'}?`,
+                    confirmText: `Delete ${uniqueUrls.length} ${uniqueUrls.length === 1 ? 'Copy' : 'Copies'}`,
+                    danger: true,
+                    iconType: 'danger'
+                });
+                if (confirmed) {
                     deleteUrls(uniqueUrls, 'All Duplicates Cleaned');
                 }
             });
@@ -1007,7 +1114,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Wire up per-cluster Clean Variants buttons
         treeContainer.querySelectorAll('.clean-cluster-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
+            btn.addEventListener('click', async () => {
                 const clusterId = btn.getAttribute('data-cluster-id');
                 const cluster = clusters.find(c => c.cluster_id === clusterId);
                 if (!cluster) return;
@@ -1016,7 +1123,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const urls = cDups.map(d => d.url).filter(Boolean);
                 const uniqueUrls = Array.from(new Set(urls));
                 if (uniqueUrls.length === 0) return;
-                if (confirm(`Keep the highest quality version and delete ${uniqueUrls.length} duplicate ${uniqueUrls.length === 1 ? 'copy' : 'copies'} from this group?`)) {
+                const confirmed = await showConfirmModal({
+                    title: 'Keep Best Version Only',
+                    body: `Keep the highest quality version and delete ${uniqueUrls.length} duplicate ${uniqueUrls.length === 1 ? 'copy' : 'copies'} from this group?`,
+                    confirmText: `Delete ${uniqueUrls.length} ${uniqueUrls.length === 1 ? 'Copy' : 'Copies'}`,
+                    danger: true,
+                    iconType: 'danger'
+                });
+                if (confirmed) {
                     deleteUrls(uniqueUrls, 'Group Cleaned');
                 }
             });
@@ -1057,10 +1171,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Wire up single duplicate variant delete buttons
         treeContainer.querySelectorAll('.delete-single-variant-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
+            btn.addEventListener('click', async () => {
                 const url = btn.getAttribute('data-url');
                 if (!url) return;
-                if (confirm(`Delete this duplicate copy from your library?\n${url}`)) {
+                const confirmed = await showConfirmModal({
+                    title: 'Delete Duplicate Copy',
+                    body: `Delete this duplicate copy from your library?\n${url}`,
+                    confirmText: 'Delete Copy',
+                    danger: true,
+                    iconType: 'danger'
+                });
+                if (confirmed) {
                     deleteUrls([url], 'Duplicate Removed');
                 }
             });
@@ -1497,8 +1618,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         urlInput.value = text.trim();
                         if (clearUrlBtn) clearUrlBtn.style.display = 'grid';
                         urlInput.focus();
-                        showToast('Pasted', 'URL pasted from clipboard.', 'info', 2000);
-                    } else {
+                        } else {
                         showToast('Clipboard Empty', 'No text found in clipboard.', 'info');
                     }
                 } else {
@@ -1605,8 +1725,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (activeFilterBadge) {
         activeFilterBadge.addEventListener('click', () => {
             setMediaTypeFilter('all');
-            showToast('Filter Cleared', 'Showing all media files.', 'info', 1500);
-        });
+            });
     }
 
     // Smart Show/Hide All Folders Toggle
@@ -1642,11 +1761,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const hasClosed = Array.from(allDetails).some(d => !d.open);
             allDetails.forEach(d => d.open = hasClosed);
             updateFoldersToggleState();
-            if (hasClosed) {
-                showToast('All Folders Expanded', `Opened all ${allDetails.length} directory branches.`, 'info', 1500);
-            } else {
-                showToast('All Folders Collapsed', `Closed all ${allDetails.length} directory branches.`, 'info', 1500);
-            }
+            
         });
     }
 
@@ -1682,13 +1797,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 : 'Hide URL analyzer card to maximize folder view (Shift+F)';
         }
 
-        if (!silent) {
-            if (isFocusMode) {
-                showToast('Focus Mode Active', 'Top analyzer hidden. Workspace maximized.', 'info', 2000);
-            } else {
-                showToast('Focus Mode Exited', 'URL analyzer restored.', 'info', 2000);
-            }
-        }
+        
     }
 
     if (toggleFocusModeBtn) {
@@ -1703,8 +1812,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const detailsElements = treeContainer.querySelectorAll('details');
             detailsElements.forEach(d => d.open = true);
             updateFoldersToggleState();
-            showToast('Expanded', 'All directory branches opened.', 'info', 2000);
-        });
+            });
     }
 
     if (collapseAllBtn) {
@@ -1712,8 +1820,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const detailsElements = treeContainer.querySelectorAll('details');
             detailsElements.forEach(d => d.open = false);
             updateFoldersToggleState();
-            showToast('Collapsed', 'All directory branches closed.', 'info', 2000);
-        });
+            });
     }
 
     // Floating Hover Preview Event Delegation
@@ -1779,7 +1886,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             try {
-                showToast('Exporting Data', 'Preparing backup JSON...', 'info', 2000);
                 const response = await authFetch('/api/export');
                 if (!response.ok) throw new Error('Export failed');
 
@@ -1889,7 +1995,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        showToast('Analyzing File', `Scanning ${file.name} for URLs...`, 'info', 2000);
         const formData = new FormData();
         formData.append('file', file);
 
@@ -2042,7 +2147,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const data = await response.json();
 
                 if (response.ok && data.status === 'cleared') {
-                    showToast('Database Reset', 'All stored URLs have been cleared.', 'info');
+                    showToast('Database Reset', 'All stored URLs have been cleared.', 'success');
                     await loadTreeData();
                 } else {
                     showToast('Reset Failed', data.message || 'Could not reset database.', 'error');
@@ -2073,7 +2178,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // 1. Close Modal if active
+            // 1. Close Confirmation Modal if active
+            if (confirmModal && confirmModal.classList.contains('active')) {
+                closeConfirmModal(false);
+                return;
+            }
+
+            // 2. Close Modal if active
             if (importPreviewModal && importPreviewModal.classList.contains('active')) {
                 closeImportPreviewModal();
                 return;
@@ -2113,20 +2224,17 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.key === 'T' || e.key === 't') {
                 e.preventDefault();
                 setViewMode('tree');
-                showToast('View Changed', 'Switched to Tree View', 'info', 1500);
                 return;
             }
             if (e.key === 'G' || e.key === 'g') {
                 e.preventDefault();
                 setViewMode('grid');
-                showToast('View Changed', 'Switched to Grid View', 'info', 1500);
                 return;
             }
             if (e.key === 'C' || e.key === 'c') {
                 e.preventDefault();
                 setViewMode('clusters');
                 loadClustersData(true);
-                showToast('View Changed', 'Switched to Duplicates View', 'info', 1500);
                 return;
             }
             if (e.key === 'E' || e.key === 'e') {

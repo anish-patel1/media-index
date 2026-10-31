@@ -323,6 +323,17 @@ a {
   border-color: var(--accent-hover);
 }
 
+.button-danger {
+  background: var(--danger);
+  color: #ffffff;
+  border: 1px solid var(--danger);
+  box-shadow: 0 3px 8px rgba(220, 38, 38, 0.2);
+}
+
+.button-danger:hover {
+  filter: brightness(1.08);
+}
+
 .button:disabled,
 .tree-action-icon-btn:disabled {
   opacity: 0.38;

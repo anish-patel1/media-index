@@ -355,8 +355,30 @@
             </div>
             <div class="modal-actions">
                 <button type="button" id="cancel-reset-btn" class="button button-outline">Cancel</button>
-                <button type="button" id="confirm-reset-btn" class="button button-primary"
-                    style="background: var(--danger); border-color: var(--danger);">Clear Everything</button>
+                <button type="button" id="confirm-reset-btn" class="button button-danger">Clear Everything</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Generic Confirmation Modal (shared, programmatically populated) -->
+    <div id="confirm-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div class="modal-icon-wrap danger" id="confirm-modal-icon" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                </div>
+                <h3 id="confirm-modal-title" class="modal-title">Confirm Action</h3>
+            </div>
+            <div class="modal-body" id="confirm-modal-body">
+                Are you sure you want to proceed?
+            </div>
+            <div class="modal-actions">
+                <button type="button" id="confirm-modal-cancel-btn" class="button button-outline">Cancel</button>
+                <button type="button" id="confirm-modal-ok-btn" class="button button-danger">Confirm</button>
             </div>
         </div>
     </div>
