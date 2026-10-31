@@ -1,5 +1,5 @@
 /**
- * mediaIndex — Content Script
+ * media index — Content Script
  * Scans page DOM for media assets (images, videos, GIFs, audio)
  * and communicates with the extension popup and background service worker.
  */

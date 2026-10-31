@@ -1,5 +1,5 @@
 /**
- * mediaIndex — Popup Controller
+ * media index — Popup Controller
  * Connects active browser tab, content script, and background worker.
  */
 
@@ -153,7 +153,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     sendBtn.disabled = selectedUrls.size === 0;
     sendBtnText.textContent = selectedUrls.size > 0 
-      ? `Send ${selectedUrls.size} to mediaIndex` 
+      ? `Send ${selectedUrls.size} to media index` 
       : 'Select items to send';
   }
 
@@ -270,7 +270,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // -------------------------------------------------------------
-  // 5. Send Selected to mediaIndex Backend
+  // 5. Send Selected to media index Backend
   // -------------------------------------------------------------
   if (sendBtn) {
     sendBtn.addEventListener('click', async () => {
@@ -293,7 +293,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           sendBtn.style.background = '#10b981';
 
           setTimeout(() => {
-            sendBtnText.textContent = `Send ${selectedUrls.size} to mediaIndex`;
+            sendBtnText.textContent = `Send ${selectedUrls.size} to media index`;
             sendBtn.style.background = '';
             sendBtn.disabled = false;
           }, 3000);
@@ -301,7 +301,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           sendBtnText.textContent = response.message || 'Submission failed';
           sendBtn.style.background = '#ef4444';
           setTimeout(() => {
-            sendBtnText.textContent = `Send ${selectedUrls.size} to mediaIndex`;
+            sendBtnText.textContent = `Send ${selectedUrls.size} to media index`;
             sendBtn.style.background = '';
             sendBtn.disabled = false;
           }, 3500);
@@ -311,7 +311,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         sendBtnText.textContent = 'Server communication error';
         sendBtn.style.background = '#ef4444';
         setTimeout(() => {
-          sendBtnText.textContent = `Send ${selectedUrls.size} to mediaIndex`;
+          sendBtnText.textContent = `Send ${selectedUrls.size} to media index`;
           sendBtn.style.background = '';
           sendBtn.disabled = false;
         }, 3500);

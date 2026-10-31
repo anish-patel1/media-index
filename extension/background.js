@@ -1,12 +1,12 @@
 /**
- * mediaIndex — Background Service Worker (Manifest V3)
+ * media index — Background Service Worker (Manifest V3)
  * Handles context menus, badge counts, and async API communication.
  */
 
 try {
   importScripts('config.js');
 } catch (e) {
-  console.warn('[mediaIndex] Could not import config.js:', e);
+  console.warn('[media index] Could not import config.js:', e);
 }
 
 const DEFAULT_API_BASE = (typeof CONFIG !== 'undefined' && CONFIG.DEFAULT_API_BASE)
@@ -32,11 +32,11 @@ function notify(title, message, type = 'basic') {
     chrome.notifications.create('mediaindex_' + Date.now(), {
       type,
       iconUrl: 'icons/icon-48.png',
-      title: `mediaIndex — ${title}`,
+      title: `media index — ${title}`,
       message
     });
   } catch (e) {
-    console.warn('[mediaIndex] Notification error:', e);
+    console.warn('[media index] Notification error:', e);
   }
 }
 
@@ -50,7 +50,7 @@ async function flashBadge(tabId, text, color, durationMs = 2500) {
     await chrome.action.setBadgeBackgroundColor({ tabId, color });
     setTimeout(() => chrome.action.setBadgeText({ tabId, text: '' }).catch(() => { }), durationMs);
   } catch (e) {
-    console.warn('[mediaIndex] Badge error:', e);
+    console.warn('[media index] Badge error:', e);
   }
 }
 
@@ -142,7 +142,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     if (!serverUp) {
       notify(
         'Server Offline',
-        `Cannot reach mediaIndex at ${apiBase}. Make sure app.py is running, then try again.`
+        `Cannot reach media index at ${apiBase}. Make sure app.py is running, then try again.`
       );
       if (tab?.id) await flashBadge(tab.id, '!', '#ef4444', 4000);
       return;
@@ -162,8 +162,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
 
   } catch (err) {
-    console.error('[mediaIndex] Context menu submission failed:', err);
-    notify('Send Failed', `Error: ${err.message}. Is mediaIndex (app.py) running?`);
+    console.error('[media index] Context menu submission failed:', err);
+    notify('Send Failed', `Error: ${err.message}. Is media index (app.py) running?`);
     if (tab?.id) await flashBadge(tab.id, '✗', '#ef4444', 4000);
   }
 });
@@ -218,10 +218,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           });
         }
       } catch (err) {
-        console.error('[mediaIndex] SUBMIT_URLS failed:', err);
+        console.error('[media index] SUBMIT_URLS failed:', err);
         sendResponse({
           status: 'error',
-          message: `Could not connect to mediaIndex. Is app.py running? (${err.message})`
+          message: `Could not connect to media index. Is app.py running? (${err.message})`
         });
       }
     })();

@@ -1,5 +1,5 @@
 /**
- * mediaIndex — Options Page Controller
+ * media index — Options Page Controller
  */
 
 document.addEventListener('DOMContentLoaded', async () => {

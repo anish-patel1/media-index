@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>mediaIndex — Extension Settings</title>
+  <title>media index — Settings</title>
   <style>
     :root {
       --primary: #6558dd;
@@ -48,17 +48,45 @@
       margin-bottom: 24px;
     }
 
-    .header img {
+    .header .brand-mark {
       width: 44px;
       height: 44px;
-      border-radius: 10px;
-      box-shadow: 0 2px 8px rgba(101, 88, 221, 0.25);
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(101, 88, 221, 0.22);
+      display: block;
+      object-fit: contain;
     }
 
-    .header-text h1 {
-      font-size: 20px;
-      font-weight: 700;
+    .header-text h1.brand-title {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.6px;
       color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-text h1.brand-title strong {
+      font-weight: 800;
+      letter-spacing: -0.6px;
+      color: var(--text);
+    }
+
+    .header-text h1.brand-title strong span {
+      color: var(--primary);
+    }
+
+    .header-text h1 .brand-subtitle-tag {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0;
+      color: var(--text-muted);
+      background: var(--primary-soft);
+      padding: 3px 10px;
+      border-radius: 6px;
+      border: 1px solid rgba(101, 88, 221, 0.15);
+      text-transform: lowercase;
     }
 
     .header-text p {
@@ -213,9 +241,9 @@
 <body>
   <div class="container">
     <div class="header">
-      <img src="icons/icon-48.png" alt="mediaIndex">
+      <img src="icons/icon-48.png" alt="media index" class="brand-mark">
       <div class="header-text">
-        <h1>mediaIndex Settings</h1>
+        <h1 class="brand-title"><strong>media<span>index</span></strong> <span class="brand-subtitle-tag">settings</span></h1>
         <p>Single source of truth configuration for extension & backend communication</p>
       </div>
     </div>

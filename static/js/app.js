@@ -8,7 +8,7 @@
  * - Dynamic domain badges, folder paths, and file type chips (JPG, WEBP, GIF, MP4, etc.)
  * - Duplicate repeat count pills (↻ N)
  * - Live search with branch auto-expansion and match highlighting
- * - Expand all / Collapse all / Copy ASCII tree diagram
+ * - Expand all / Collapse all toggle
  * - Backup JSON export and merge import
  * - Reset database with confirmation modal
  * - Top-right floating animated toasts
@@ -79,7 +79,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const clearSearchBtn = document.getElementById('clear-search-btn');
     const expandAllBtn = document.getElementById('expand-all-btn');
     const collapseAllBtn = document.getElementById('collapse-all-btn');
-    const copyTreeTextBtn = document.getElementById('copy-tree-text-btn');
 
     // Show/Hide & Focus Toolbar Controls
     const toggleFoldersBtn = document.getElementById('toggle-tree-folders-btn');
@@ -492,14 +491,18 @@ document.addEventListener('DOMContentLoaded', () => {
         updateFoldersToggleState();
     }
 
-    // Helper: extract all file leaves from hierarchical tree data
+    // Helper: extract all file leaves from hierarchical tree data with folder path
     function extractFilesFromTree(nodes, query = '') {
         const files = [];
         const q = query ? query.trim().toLowerCase() : '';
 
-        function walk(node, domain = null) {
+        function walk(node, domain = null, folderPath = '/') {
             if (!node) return;
             const currentDomain = node.type === 'domain' ? node.name : domain;
+            let currentFolderPath = folderPath;
+            if (node.type === 'folder') {
+                currentFolderPath = node.path || (folderPath.endsWith('/') ? `${folderPath}${node.name}/` : `${folderPath}/${node.name}/`);
+            }
 
             if (node.type === 'file') {
                 if (node.url) fileLookupMap.set(node.url, node);
@@ -510,16 +513,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     (node.name && node.name.toLowerCase().includes(q)) ||
                     (node.url && node.url.toLowerCase().includes(q)) ||
                     (node.extension && node.extension.toLowerCase().includes(q)) ||
-                    (currentDomain && currentDomain.toLowerCase().includes(q))
+                    (currentDomain && currentDomain.toLowerCase().includes(q)) ||
+                    (currentFolderPath && currentFolderPath.toLowerCase().includes(q))
                 ) {
-                    files.push({ ...node, domain: currentDomain });
+                    files.push({ ...node, domain: currentDomain, folderPath: currentFolderPath });
                 }
                 return;
             }
 
             if (node.children && Array.isArray(node.children)) {
                 for (const child of node.children) {
-                    walk(child, currentDomain);
+                    walk(child, currentDomain, currentFolderPath);
                 }
             }
         }
@@ -532,7 +536,87 @@ document.addEventListener('DOMContentLoaded', () => {
         return files;
     }
 
-    // Grid View Renderer
+    function getFileTimestamp(file) {
+        const raw = file.last_updated || file.first_added;
+        if (!raw) return 0;
+        const t = new Date(raw).getTime();
+        return isNaN(t) ? 0 : t;
+    }
+
+    function renderMediaCard(file, searchQuery = '') {
+        const ext = (file.extension || 'FILE').toUpperCase();
+        const mType = file.media_type || 'image';
+        const meta = file.metadata || {};
+        const timeText = formatTimeAgo(file.last_updated || file.first_added);
+        const isImage = mType === 'image' || mType === 'gif' || ['JPG', 'JPEG', 'PNG', 'WEBP', 'GIF', 'AVIF', 'SVG'].includes(ext);
+        const thumbUrl = `/api/thumbnail?url=${encodeURIComponent(file.url)}&size=320`;
+
+        let thumbContent = '';
+        if (isImage) {
+            thumbContent = `
+                <div class="thumb-skeleton" aria-hidden="true"></div>
+                <img class="media-card-thumb lazy-thumb" 
+                     data-src="${escapeHtml(thumbUrl)}" 
+                     data-ext="${escapeHtml(ext)}"
+                     alt="${escapeHtml(file.name)}" 
+                     loading="lazy">
+            `;
+        } else if (mType === 'video' || ['MP4', 'WEBM', 'MOV', 'M4V'].includes(ext)) {
+            thumbContent = `
+                <div class="media-card-fallback">
+                    ${SVG_ICONS.video}
+                    <span>${escapeHtml(ext)} Video</span>
+                </div>
+            `;
+        } else {
+            thumbContent = `
+                <div class="media-card-fallback">
+                    ${SVG_ICONS.file}
+                    <span>${escapeHtml(ext)}</span>
+                </div>
+            `;
+        }
+
+        let metaBadgesHtml = '';
+        if (meta.size_bytes && !isNaN(meta.size_bytes) && Number(meta.size_bytes) > 0) {
+            metaBadgesHtml += `<span class="meta-badge size-badge" title="Size: ${Number(meta.size_bytes).toLocaleString()} bytes">${formatBytes(meta.size_bytes)}</span>`;
+        }
+        if (meta.dimensions && Array.isArray(meta.dimensions) && meta.dimensions.length === 2) {
+            metaBadgesHtml += `<span class="meta-badge dim-badge" title="Resolution: ${meta.dimensions[0]} × ${meta.dimensions[1]} px">${meta.dimensions[0]}×${meta.dimensions[1]}</span>`;
+        }
+
+        const repeatsBadge = file.count > 1 
+            ? `<span class="duplicate-badge" title="Submitted ${file.count} times">↻ ${file.count}</span>` 
+            : '';
+
+        return `
+            <div class="media-card" data-url="${escapeHtml(file.url)}">
+                <div class="media-card-thumb-wrap">
+                    ${thumbContent}
+                    <div class="media-card-badge-top">
+                        <span class="type-chip ${mType === 'video' ? 'video-chip' : (ext === 'WEBP' ? 'webp-chip' : (ext === 'GIF' ? 'gif-chip' : 'image-chip'))}">${escapeHtml(ext)}</span>
+                        ${repeatsBadge}
+                    </div>
+                </div>
+                <div class="media-card-body">
+                    <div class="media-card-title" title="${escapeHtml(file.name)}">
+                        <a href="${escapeHtml(file.url)}" target="_blank" rel="noopener noreferrer">${highlightText(file.name, searchQuery)}</a>
+                    </div>
+                    <div class="media-card-domain" title="${escapeHtml(file.domain || file.url)}">
+                        ${escapeHtml(file.domain || '')}
+                    </div>
+                    <div class="media-card-meta">
+                        <div class="media-card-badges">
+                            ${metaBadgesHtml}
+                        </div>
+                        <span>${escapeHtml(timeText)}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    // Grid View Renderer - Grouped by Folder Path and Chronologically Sorted
     function renderGridView(treeData, searchQuery = '') {
         if (!treeContainer) return;
 
@@ -566,80 +650,72 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const cardsHtml = files.map(file => {
-            const ext = (file.extension || 'FILE').toUpperCase();
-            const mType = file.media_type || 'image';
-            const meta = file.metadata || {};
-            const timeText = formatTimeAgo(file.last_updated || file.first_added);
-            const isImage = mType === 'image' || mType === 'gif' || ['JPG', 'JPEG', 'PNG', 'WEBP', 'GIF', 'AVIF', 'SVG'].includes(ext);
-            const thumbUrl = `/api/thumbnail?url=${encodeURIComponent(file.url)}&size=320`;
-
-            let thumbContent = '';
-            if (isImage) {
-                thumbContent = `
-                    <div class="thumb-skeleton" aria-hidden="true"></div>
-                    <img class="media-card-thumb lazy-thumb" 
-                         data-src="${escapeHtml(thumbUrl)}" 
-                         data-ext="${escapeHtml(ext)}"
-                         alt="${escapeHtml(file.name)}" 
-                         loading="lazy">
-                `;
-            } else if (mType === 'video' || ['MP4', 'WEBM', 'MOV', 'M4V'].includes(ext)) {
-                thumbContent = `
-                    <div class="media-card-fallback">
-                        ${SVG_ICONS.video}
-                        <span>${escapeHtml(ext)} Video</span>
-                    </div>
-                `;
-            } else {
-                thumbContent = `
-                    <div class="media-card-fallback">
-                        ${SVG_ICONS.file}
-                        <span>${escapeHtml(ext)}</span>
-                    </div>
-                `;
+        // Group files by domain and folder path
+        const folderMap = new Map();
+        for (const file of files) {
+            const domain = file.domain || 'unknown';
+            const folderPath = file.folderPath || '/';
+            const key = `${domain}::${folderPath}`;
+            if (!folderMap.has(key)) {
+                folderMap.set(key, {
+                    key,
+                    domain,
+                    folderPath,
+                    items: [],
+                    latestTimestamp: 0
+                });
             }
-
-            let metaBadgesHtml = '';
-            if (meta.size_bytes && !isNaN(meta.size_bytes) && Number(meta.size_bytes) > 0) {
-                metaBadgesHtml += `<span class="meta-badge size-badge" title="Size: ${Number(meta.size_bytes).toLocaleString()} bytes">${formatBytes(meta.size_bytes)}</span>`;
+            const group = folderMap.get(key);
+            group.items.push(file);
+            const ts = getFileTimestamp(file);
+            if (ts > group.latestTimestamp) {
+                group.latestTimestamp = ts;
             }
-            if (meta.dimensions && Array.isArray(meta.dimensions) && meta.dimensions.length === 2) {
-                metaBadgesHtml += `<span class="meta-badge dim-badge" title="Resolution: ${meta.dimensions[0]} × ${meta.dimensions[1]} px">${meta.dimensions[0]}×${meta.dimensions[1]}</span>`;
-            }
+        }
 
-            const repeatsBadge = file.count > 1 
-                ? `<span class="duplicate-badge" title="Submitted ${file.count} times">↻ ${file.count}</span>` 
+        // Tier 1 Sort: Sort media items inside each folder chronologically (newest to oldest)
+        const folderGroups = Array.from(folderMap.values());
+        for (const group of folderGroups) {
+            group.items.sort((a, b) => getFileTimestamp(b) - getFileTimestamp(a));
+        }
+
+        // Tier 2 Sort: Sort folder groups themselves chronologically (latest activity first)
+        folderGroups.sort((a, b) => b.latestTimestamp - a.latestTimestamp);
+
+        // Render each folder group with structured header and grid
+        const folderSectionsHtml = folderGroups.map(group => {
+            const cardsHtml = group.items.map(f => renderMediaCard(f, searchQuery)).join('');
+            const cleanPath = group.folderPath === '/' ? 'Root' : group.folderPath.replace(/^\/|\/$/g, '');
+            const latestTimeAgo = group.latestTimestamp > 0 
+                ? formatTimeAgo(new Date(group.latestTimestamp).toISOString()) 
                 : '';
 
             return `
-                <div class="media-card" data-url="${escapeHtml(file.url)}">
-                    <div class="media-card-thumb-wrap">
-                        ${thumbContent}
-                        <div class="media-card-badge-top">
-                            <span class="type-chip ${mType === 'video' ? 'video-chip' : (ext === 'WEBP' ? 'webp-chip' : (ext === 'GIF' ? 'gif-chip' : 'image-chip'))}">${escapeHtml(ext)}</span>
-                            ${repeatsBadge}
-                        </div>
-                    </div>
-                    <div class="media-card-body">
-                        <div class="media-card-title" title="${escapeHtml(file.name)}">
-                            <a href="${escapeHtml(file.url)}" target="_blank" rel="noopener noreferrer">${highlightText(file.name, searchQuery)}</a>
-                        </div>
-                        <div class="media-card-domain" title="${escapeHtml(file.domain || file.url)}">
-                            ${escapeHtml(file.domain || '')}
-                        </div>
-                        <div class="media-card-meta">
-                            <div class="media-card-badges">
-                                ${metaBadgesHtml}
+                <section class="grid-folder-section" data-folder-key="${escapeHtml(group.key)}">
+                    <header class="grid-folder-header">
+                        <div class="grid-folder-title-wrap">
+                            <span class="grid-folder-icon" aria-hidden="true">
+                                ${SVG_ICONS.nestedFolder}
+                            </span>
+                            <div class="grid-folder-path-info">
+                                <span class="grid-folder-domain">${escapeHtml(group.domain)}</span>
+                                <span class="grid-folder-divider">/</span>
+                                <span class="grid-folder-path" title="${escapeHtml(group.folderPath)}">${escapeHtml(cleanPath)}</span>
                             </div>
-                            <span>${escapeHtml(timeText)}</span>
                         </div>
+                        <div class="grid-folder-meta">
+                            <span class="grid-folder-count-badge">${group.items.length} ${group.items.length === 1 ? 'file' : 'files'}</span>
+                            ${latestTimeAgo ? `<span class="grid-folder-time-badge" title="Latest activity in this folder: ${escapeHtml(new Date(group.latestTimestamp).toLocaleString())}">Updated ${escapeHtml(latestTimeAgo)}</span>` : ''}
+                        </div>
+                    </header>
+                    <div class="media-grid">
+                        ${cardsHtml}
                     </div>
-                </div>
+                </section>
             `;
         }).join('');
 
-        treeContainer.innerHTML = `<div class="media-grid">${cardsHtml}</div>`;
+        treeContainer.innerHTML = `<div class="grid-view-container">${folderSectionsHtml}</div>`;
         observeLazyThumbnails();
     }
 
@@ -732,7 +808,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <line x1="12" y1="8" x2="12.01" y2="8"></line>
                 </svg>
                 <div class="clusters-explainer-text">
-                    <strong>How this works:</strong> Media Index found multiple copies of the same files across different CDNs or sizes. We automatically select the <strong>★ Best Quality (Keep)</strong> original for you. You can safely delete redundant copies below to save storage space.
+                    <strong>How duplicate resolution works:</strong> media index detected identical or multi-resolution versions of the same media. The highest quality copy is marked as <strong>★ Best Version</strong>. You can resolve each group by keeping the best copy, deleting individual variants, or choosing <strong>Keep All</strong> to preserve every file.
                 </div>
             </div>
         `;
@@ -759,7 +835,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <polyline points="3 6 5 6 21 6"></polyline>
                             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                         </svg>
-                        <span>Clean All Duplicates (${totalVariants})</span>
+                        <span>Resolve All Duplicates (Delete ${totalVariants})</span>
                     </button>
                 </div>
             </div>
@@ -785,8 +861,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const badgeHtml = isCanonical 
-                ? `<span class="badge-canonical">★ Best Quality (Keep)</span>`
-                : `<span class="badge-duplicate">Duplicate Copy</span>`;
+                ? `<span class="badge-canonical">★ Best Version (Keep)</span>`
+                : `<span class="badge-duplicate">Duplicate Variant</span>`;
 
             let qualityLabel = '';
             if (isCanonical) {
@@ -798,7 +874,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     qualityLabel = `<span class="cluster-item-quality is-winner">Primary Master</span>`;
                 }
             } else {
-                qualityLabel = `<span class="cluster-item-quality">Redundant Copy</span>`;
+                if (width && height) {
+                    qualityLabel = `<span class="cluster-item-quality">Resolution: ${width}×${height}</span>`;
+                } else if (sizeBytes) {
+                    qualityLabel = `<span class="cluster-item-quality">File Size: ${formatBytes(sizeBytes)}</span>`;
+                } else {
+                    qualityLabel = `<span class="cluster-item-quality">Duplicate Variant</span>`;
+                }
             }
 
             const actionHtml = isCanonical
@@ -867,18 +949,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                         <div class="cluster-header-right">
                             ${savings > 0 ? `<span class="cluster-savings-pill">Save ~${formatBytes(savings)}</span>` : ''}
-                            <button type="button" class="keep-both-btn" data-cluster-id="${escapeHtml(cluster.cluster_id || '')}" title="Keep all copies in this group and hide from duplicates list">
+                            <button type="button" class="keep-both-btn" data-cluster-id="${escapeHtml(cluster.cluster_id || '')}" data-item-count="${items.length || (duplicates.length + 1)}" title="Keep all ${items.length || (duplicates.length + 1)} copies in this group and dismiss from duplicates list">
                                 <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <polyline points="20 6 9 17 4 12"></polyline>
                                 </svg>
-                                <span>Keep Both</span>
+                                <span>${(items.length || (duplicates.length + 1)) === 2 ? 'Keep Both' : `Keep All (${items.length || (duplicates.length + 1)})`}</span>
                             </button>
-                            <button type="button" class="clean-cluster-btn" data-cluster-id="${escapeHtml(cluster.cluster_id || '')}" title="Keep best quality version and remove ${duplicates.length} redundant copies in this group">
+                            <button type="button" class="clean-cluster-btn" data-cluster-id="${escapeHtml(cluster.cluster_id || '')}" title="Keep best quality version and delete ${duplicates.length} redundant ${duplicates.length === 1 ? 'copy' : 'copies'} in this group">
                                 <svg viewBox="0 0 24 24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                     <polyline points="3 6 5 6 21 6"></polyline>
                                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                                 </svg>
-                                <span>Keep Best & Delete ${duplicates.length} Cop${duplicates.length > 1 ? 'ies' : 'y'}</span>
+                                <span>Keep Best Only (Delete ${duplicates.length})</span>
                             </button>
                         </div>
                     </div>
@@ -917,7 +999,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     showToast('No Duplicates', 'No redundant copies found to clean.', 'info');
                     return;
                 }
-                if (confirm(`Keep all best quality originals and remove all ${uniqueUrls.length} redundant copies across all groups? This will free up storage space.`)) {
+                if (confirm(`Resolve all ${clusters.length} duplicate groups by keeping the best version of each and permanently deleting ${uniqueUrls.length} redundant ${uniqueUrls.length === 1 ? 'copy' : 'copies'}?`)) {
                     deleteUrls(uniqueUrls, 'All Duplicates Cleaned');
                 }
             });
@@ -934,7 +1016,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const urls = cDups.map(d => d.url).filter(Boolean);
                 const uniqueUrls = Array.from(new Set(urls));
                 if (uniqueUrls.length === 0) return;
-                if (confirm(`Keep the best quality original and remove ${uniqueUrls.length} redundant copy(ies) from this group?`)) {
+                if (confirm(`Keep the highest quality version and delete ${uniqueUrls.length} duplicate ${uniqueUrls.length === 1 ? 'copy' : 'copies'} from this group?`)) {
                     deleteUrls(uniqueUrls, 'Group Cleaned');
                 }
             });
@@ -955,7 +1037,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                     const res = await response.json();
                     if (response.ok && res.status === 'success') {
-                        showToast('Group Preserved', 'Both files are kept and removed from duplicates list.', 'success');
+                        const itemCount = parseInt(btn.getAttribute('data-item-count') || '2', 10);
+                        const toastMsg = itemCount === 2 
+                            ? 'Both files were preserved and dismissed from duplicate suggestions.' 
+                            : `All ${itemCount} files were preserved and dismissed from duplicate suggestions.`;
+                        showToast('Group Preserved', toastMsg, 'success');
                         await loadClustersData(true);
                     } else {
                         showToast('Error', res.message || 'Could not preserve duplicate group.', 'error');
@@ -974,7 +1060,7 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.addEventListener('click', () => {
                 const url = btn.getAttribute('data-url');
                 if (!url) return;
-                if (confirm(`Remove this duplicate copy from your library?\n${url}`)) {
+                if (confirm(`Delete this duplicate copy from your library?\n${url}`)) {
                     deleteUrls([url], 'Duplicate Removed');
                 }
             });
@@ -1291,7 +1377,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (expandAllBtn) expandAllBtn.disabled = !hasRecords;
                 if (collapseAllBtn) collapseAllBtn.disabled = !hasRecords;
                 if (toggleFoldersBtn) toggleFoldersBtn.disabled = !hasRecords;
-                if (copyTreeTextBtn) copyTreeTextBtn.disabled = !hasRecords;
                 if (treeSearchInput) {
                     treeSearchInput.disabled = !hasRecords;
                     if (!hasRecords) {
@@ -1545,7 +1630,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (toggleFoldersText) toggleFoldersText.textContent = 'Collapse All';
             toggleFoldersBtn.title = `Hide all folders (all currently open) — Shift+E`;
             if (iconSvg) {
-                iconSvg.innerHTML = `<polyline points="17 11 12 6 7 11"></polyline><polyline points="17 18 12 13 7 18"></polyline>`;
+                iconSvg.innerHTML = `<polyline points="6 17 11 12 6 7"></polyline><polyline points="13 17 18 12 13 7"></polyline>`;
             }
         }
     }
@@ -1682,50 +1767,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     window.addEventListener('scroll', () => hideHoverPreview(), { passive: true });
-
-    // Copy ASCII Tree Diagram
-    function generateAsciiTree(nodes, indent = '') {
-        let result = '';
-        nodes.forEach((node, idx) => {
-            const isLast = idx === nodes.length - 1;
-            const branch = isLast ? '└── ' : '├── ';
-            const childIndent = indent + (isLast ? '    ' : '│   ');
-
-            if (node.type === 'domain') {
-                result += `${indent}${branch}🌐 ${node.name} (${node.domain_type || 'SOURCE'})\n`;
-            } else if (node.type === 'folder') {
-                result += `${indent}${branch}📁 ${node.name}/\n`;
-            } else if (node.type === 'file') {
-                const countBadge = node.count > 1 ? ` (↻ ${node.count})` : '';
-                result += `${indent}${branch}📄 ${node.name} [${node.extension || 'FILE'}]${countBadge}\n`;
-            }
-
-            if (node.children && node.children.length > 0) {
-                result += generateAsciiTree(node.children, childIndent);
-            }
-        });
-        return result;
-    }
-
-    if (copyTreeTextBtn) {
-        copyTreeTextBtn.addEventListener('click', async () => {
-            if (!rawTreeData || rawTreeData.length === 0) {
-                showToast('Empty Tree', 'No directory structure to copy.', 'info');
-                return;
-            }
-
-            const ascii = 'MEDIA INDEX — DIRECTORY HIERARCHY\n' +
-                          '=================================\n' +
-                          generateAsciiTree(rawTreeData);
-
-            try {
-                await navigator.clipboard.writeText(ascii);
-                showToast('Copied to Clipboard', 'ASCII directory tree copied successfully!', 'success');
-            } catch {
-                showToast('Copy Failed', 'Clipboard access not permitted.', 'error');
-            }
-        });
-    }
 
     // -------------------------------------------------------------
     // 9. Export & Import Backup

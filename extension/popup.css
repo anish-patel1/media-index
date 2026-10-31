@@ -1,4 +1,4 @@
-/* mediaIndex Extension Popup Styles */
+/* media index Extension Popup Styles */
 :root {
   --primary: #6558dd;
   --primary-hover: #5446cb;
@@ -72,6 +72,10 @@ body {
   font-size: 14px;
   letter-spacing: -0.2px;
   color: var(--text);
+}
+
+.brand-title span {
+  color: var(--primary);
 }
 
 .brand-subtitle {
@@ -261,7 +265,9 @@ body {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Asset Card Item */
