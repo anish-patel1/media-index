@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>mediaIndex Companion</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="popup-header">
+      <div class="header-brand">
+        <img class="brand-icon" src="icons/icon-48.png" alt="mediaIndex">
+        <div class="brand-text">
+          <span class="brand-title">mediaIndex</span>
+          <span class="brand-subtitle">Page Asset Ingestion</span>
+        </div>
+      </div>
+      <div class="header-status">
+        <span class="status-indicator offline" id="connection-status" title="Connecting to backend...">
+          <span class="status-dot"></span>
+          <span class="status-label" id="status-label">Checking...</span>
+        </span>
+      </div>
+    </header>
+
+    <!-- Page Info Banner -->
+    <section class="page-meta-banner">
+      <div class="page-title-row">
+        <span class="page-icon">🌐</span>
+        <span class="page-title" id="page-title" title="Current tab title">Loading page...</span>
+      </div>
+      <div class="page-stats-row">
+        <span class="stats-badge" id="stats-total">0 assets</span>
+        <span class="stats-sub" id="stats-breakdown">Scanning DOM...</span>
+      </div>
+    </section>
+
+    <!-- Filter & Selection Bar -->
+    <section class="selection-bar" id="selection-bar" style="display: none;">
+      <label class="select-all-label">
+        <input type="checkbox" id="select-all-checkbox" checked>
+        <span class="checkmark-text">Select All (<span id="selected-count">0</span>)</span>
+      </label>
+      <div class="filter-pills" id="filter-pills">
+        <button type="button" class="filter-btn active" data-filter="all">All</button>
+        <button type="button" class="filter-btn" data-filter="image">Images</button>
+        <button type="button" class="filter-btn" data-filter="video">Videos</button>
+        <button type="button" class="filter-btn" data-filter="gif">GIFs</button>
+      </div>
+    </section>
+
+    <!-- Main Content Area: Scrollable Asset Cards -->
+    <main class="assets-container" id="assets-container">
+      <div class="assets-list" id="assets-list">
+        <!-- Dynamically injected via popup.js -->
+      </div>
+
+      <div class="state-message" id="scanning-state">
+        <div class="spinner"></div>
+        <h4>Scanning Page Assets</h4>
+        <p>Inspecting images, videos, audio, and linked media files...</p>
+      </div>
+
+      <div class="state-message" id="empty-state" style="display: none;">
+        <span class="empty-icon">🔍</span>
+        <h4>No Media Assets Found</h4>
+        <p>No direct images, videos, or GIFs were found on this active page.</p>
+      </div>
+    </main>
+
+    <!-- Action Bar -->
+    <footer class="popup-footer">
+      <button type="button" class="send-all-btn" id="send-btn" disabled>
+        <svg class="send-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"></line>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>
+        <span id="send-btn-text">Send Selected to mediaIndex</span>
+      </button>
+      <div class="footer-links">
+        <a href="#" id="dashboard-link" target="_blank" rel="noopener noreferrer" class="dashboard-link">
+          Open mediaIndex Library ↗
+        </a>
+        <a href="#" id="open-settings-btn" class="settings-link" title="Extension Settings">⚙️</a>
+      </div>
+    </footer>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

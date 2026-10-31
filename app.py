@@ -46,6 +46,31 @@ def get_user_id() -> str:
     return "default"
 
 
+@app.after_request
+def add_cors_headers(response):
+    """Enables Cross-Origin Resource Sharing (CORS) for Chrome Extensions and localhost."""
+    origin = request.headers.get("Origin", "")
+    if origin.startswith("chrome-extension://") or origin.startswith("moz-extension://") or "localhost" in origin or "127.0.0.1" in origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-User-Id, Authorization"
+    return response
+
+
+@app.route("/api/<path:subpath>", methods=["OPTIONS"])
+def api_preflight(subpath):
+    """Handles browser extension preflight CORS requests."""
+    response = Response()
+    origin = request.headers.get("Origin", "")
+    if origin.startswith("chrome-extension://") or origin.startswith("moz-extension://") or "localhost" in origin or "127.0.0.1" in origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+    else:
+        response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-User-Id, Authorization"
+    return response, 204
+
+
 @app.route("/")
 def index():
     """Renders the main web interface."""
@@ -602,19 +627,30 @@ def import_data():
                 "message": "No data provided. Please upload a file or provide payload content."
             }), 400
 
-        # Handle JSON preview mode if requested
+        # Handle list of URLs in JSON (e.g. from Chrome extension or batch API calls)
+        raw_url_list = None
+        if isinstance(import_payload, list):
+            raw_url_list = [str(u).strip() for u in import_payload if str(u).strip()]
+        elif isinstance(import_payload, dict) and isinstance(import_payload.get("urls"), list):
+            raw_url_list = [str(u).strip() for u in import_payload["urls"] if str(u).strip()]
+
+        if raw_url_list is not None:
+            payload, code = _process_url_batch(raw_url_list, user_id, preview=preview_mode, format_type="json")
+            return jsonify(payload), code
+
+        # Handle JSON preview mode for backup dictionary payloads if requested
         if preview_mode:
             urls_map = import_payload.get("urls") if isinstance(import_payload, dict) else None
             if urls_map is None and isinstance(import_payload, dict):
                 urls_map = import_payload
-            raw_url_list = []
+            dict_url_list = []
             if isinstance(urls_map, dict):
                 for k, v in urls_map.items():
                     if isinstance(v, dict):
-                        raw_url_list.append(v.get("url") or k)
+                        dict_url_list.append(v.get("url") or k)
                     elif isinstance(v, str):
-                        raw_url_list.append(v)
-            payload, code = _process_url_batch(raw_url_list, user_id, preview=True, format_type="json")
+                        dict_url_list.append(v)
+            payload, code = _process_url_batch(dict_url_list, user_id, preview=True, format_type="json")
             return jsonify(payload), code
 
         result = db.import_data(import_payload, user_id=user_id)

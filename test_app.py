@@ -542,6 +542,39 @@ class TestAppRoutes(unittest.TestCase):
         self.assertEqual(res2.status_code, 400)
 
 
+    def test_extension_cors_headers(self):
+        ext_origin = "chrome-extension://abcdefghijklmnopqrstuvwxyz"
+        res = self.client.get("/api/tree", headers={"Origin": ext_origin})
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.headers.get("Access-Control-Allow-Origin"), ext_origin)
+        self.assertIn("Content-Type", res.headers.get("Access-Control-Allow-Headers", ""))
+
+    def test_extension_options_preflight(self):
+        ext_origin = "chrome-extension://abcdefghijklmnopqrstuvwxyz"
+        res = self.client.open("/api/urls", method="OPTIONS", headers={"Origin": ext_origin})
+        self.assertIn(res.status_code, (200, 204))
+        self.assertEqual(res.headers.get("Access-Control-Allow-Origin"), ext_origin)
+
+    def test_extension_batch_import(self):
+        ext_origin = "chrome-extension://abcdefghijklmnopqrstuvwxyz"
+        batch_urls = [
+            "https://cdn.example.com/images/hero1.jpg",
+            "https://cdn.example.com/images/hero2.png",
+            "https://cdn.example.com/images/hero1.jpg"
+        ]
+        res = self.client.post(
+            "/api/import",
+            json={"urls": batch_urls},
+            headers={"Origin": ext_origin, "X-User-Id": "ext_user"}
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertEqual(data["status"], "success")
+        self.assertEqual(data["imported"], 2)
+        self.assertEqual(data["merged"], 1)
+        self.assertEqual(data["total_processed"], 3)
+
+
 if __name__ == "__main__":
     unittest.main()
 

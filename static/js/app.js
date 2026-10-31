@@ -20,16 +20,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------
     function getOrCreateUserId() {
         const STORAGE_KEY = 'mua_user_id';
-        let id = localStorage.getItem(STORAGE_KEY);
-        if (!id || !id.trim()) {
-            if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-                id = crypto.randomUUID();
-            } else {
-                id = 'usr_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9);
-            }
-            localStorage.setItem(STORAGE_KEY, id);
-        }
-        return id;
+        // Always use 'default' to align with Chrome extension namespace
+        localStorage.setItem(STORAGE_KEY, 'default');
+        return 'default';
     }
 
     const currentUserId = getOrCreateUserId();
