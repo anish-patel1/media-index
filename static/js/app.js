@@ -20,9 +20,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------
     function getOrCreateUserId() {
         const STORAGE_KEY = 'mua_user_id';
-        // Always use 'default' to align with Chrome extension namespace
-        localStorage.setItem(STORAGE_KEY, 'default');
-        return 'default';
+        let stored = localStorage.getItem(STORAGE_KEY);
+        if (!stored || !stored.trim()) {
+            stored = 'default';
+            localStorage.setItem(STORAGE_KEY, stored);
+        }
+        try {
+            window.dispatchEvent(new CustomEvent('media-index-auth-change', { detail: { userId: stored } }));
+        } catch {}
+        return stored;
     }
 
     const currentUserId = getOrCreateUserId();
@@ -125,8 +131,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const previewCopyBtn = document.getElementById('preview-copy-btn');
     const previewOpenLink = document.getElementById('preview-open-link');
 
-    // Global file lookup map
+    // Global file and folder lookup maps
     const fileLookupMap = new Map();
+    const folderLookupMap = new Map();
 
     // Toast Container
     const toastContainer = document.getElementById('toast-container');
@@ -389,8 +396,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const query = searchQuery.trim().toLowerCase();
         let html = '';
 
-        function renderNode(node) {
+        function renderNode(node, currentDomain = '') {
             if (node.type === 'domain') {
+                const domainName = node.name || '';
                 const color = node.domain_color || 'violet';
                 const domainType = node.domain_type || 'MEDIA SOURCE';
                 const itemsCount = node.items_count || 0;
@@ -399,7 +407,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 let childrenHtml = '';
                 if (node.children && node.children.length > 0) {
-                    childrenHtml = node.children.map(renderNode).join('');
+                    childrenHtml = node.children.map(ch => renderNode(ch, domainName)).join('');
                 }
 
                 return `
@@ -425,10 +433,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 const pathText = node.path || `/${node.name}/`;
                 const timeText = formatTimeAgo(node.last_updated);
 
+                // Collect all files in this folder for folder-level discovery
+                function collectFolderUrls(fNode) {
+                    const list = [];
+                    function walk(n) {
+                        if (!n) return;
+                        if (n.type === 'file' && n.url) list.push(n.url);
+                        if (n.children && Array.isArray(n.children)) n.children.forEach(walk);
+                    }
+                    walk(fNode);
+                    return list;
+                }
+                const folderMediaUrls = collectFolderUrls(node);
+                const folderKey = `${currentDomain}::${pathText}`;
+                folderLookupMap.set(folderKey, folderMediaUrls);
+
                 let childrenHtml = '';
                 if (node.children && node.children.length > 0) {
-                    childrenHtml = node.children.map(renderNode).join('');
+                    childrenHtml = node.children.map(ch => renderNode(ch, currentDomain)).join('');
                 }
+
+                const magicBtnHtml = folderMediaUrls.length > 0
+                    ? `<button type="button" class="folder-magic-btn" data-folder-key="${escapeHtml(folderKey)}" data-folder="${escapeHtml(pathText)}" data-domain="${escapeHtml(currentDomain)}" title="Scan this folder on host for missing media (✨ Folder Magic)" aria-label="Scan Folder for Missing Media">✨ Scan Folder</button>`
+                    : '';
 
                 return `
                     <details class="tree-folder" open>
@@ -438,7 +465,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                 ${SVG_ICONS.nestedFolder}
                             </span>
                             <span class="tree-name">
-                                <strong>${highlightText(node.name, query)}</strong>
+                                <div class="folder-title-row">
+                                    <strong>${highlightText(node.name, query)}</strong>
+                                    ${magicBtnHtml}
+                                </div>
                                 <small>${escapeHtml(pathText)}</small>
                             </span>
                             <span class="file-count">${filesCount} FILE${filesCount !== 1 ? 'S' : ''}</span>
@@ -513,6 +543,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                         <circle cx="12" cy="12" r="3"></circle>
                                     </svg>
                                 </button>
+                                <button type="button" class="tree-magic-btn" data-url="${escapeHtml(node.url)}" title="Discover Sibling Files (✨ Magic Scanner)" aria-label="Discover Sibling Files">✨</button>
                             </div>
                             <div class="file-sub-row">
                                 <small title="${escapeHtml(node.url)}">${escapeHtml(truncated)}</small>
@@ -695,6 +726,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${thumbContent}
                     <div class="media-card-badge-top">
                         <span class="type-chip ${mType === 'video' ? 'video-chip' : (ext === 'WEBP' ? 'webp-chip' : (ext === 'GIF' ? 'gif-chip' : 'image-chip'))}">${escapeHtml(ext)}</span>
+                        <button type="button" class="tree-magic-btn" data-url="${escapeHtml(file.url)}" title="Discover Sibling Files (✨ Magic Scanner)">✨</button>
                         ${repeatsBadge}
                     </div>
                 </div>
@@ -790,6 +822,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? formatTimeAgo(new Date(group.latestTimestamp).toISOString()) 
                 : '';
 
+            const gridFolderKey = `${group.domain}::${group.folderPath}`;
+            const gridUrls = group.items.map(it => it.url).filter(Boolean);
+            folderLookupMap.set(gridFolderKey, gridUrls);
+
+            const gridMagicBtnHtml = gridUrls.length > 0
+                ? `<button type="button" class="grid-folder-magic-btn" data-folder-key="${escapeHtml(gridFolderKey)}" data-folder="${escapeHtml(group.folderPath)}" data-domain="${escapeHtml(group.domain)}" title="Scan this folder on host for missing media (✨ Folder Magic)">✨ Scan Folder</button>`
+                : '';
+
             return `
                 <section class="grid-folder-section" data-folder-key="${escapeHtml(group.key)}">
                     <header class="grid-folder-header">
@@ -806,6 +846,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="grid-folder-meta">
                             <span class="grid-folder-count-badge">${group.items.length} ${group.items.length === 1 ? 'file' : 'files'}</span>
                             ${latestTimeAgo ? `<span class="grid-folder-time-badge" title="Latest activity in this folder: ${escapeHtml(new Date(group.latestTimestamp).toLocaleString())}">Updated ${escapeHtml(latestTimeAgo)}</span>` : ''}
+                            ${gridMagicBtnHtml}
                         </div>
                     </header>
                     <div class="media-grid">
@@ -1340,6 +1381,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             };
         }
+        const previewDiscoverBtn = document.getElementById('preview-discover-btn');
+        if (previewDiscoverBtn) {
+            previewDiscoverBtn.onclick = () => {
+                cancelHoverPreview();
+                openSiblingDiscoveryModal(node.url);
+            };
+        }
 
         // Media Thumbnail Preview
         if (isImg) {
@@ -1860,6 +1908,35 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         treeContainer.addEventListener('click', (e) => {
+            const magicTrigger = e.target.closest('.tree-magic-btn');
+            if (magicTrigger) {
+                e.preventDefault();
+                e.stopPropagation();
+                const url = magicTrigger.getAttribute('data-url');
+                if (url) {
+                    cancelHoverPreview();
+                    openSiblingDiscoveryModal(url, magicTrigger);
+                }
+                return;
+            }
+
+            const folderMagicTrigger = e.target.closest('.folder-magic-btn, .grid-folder-magic-btn');
+            if (folderMagicTrigger) {
+                e.preventDefault();
+                e.stopPropagation();
+                const folderKey = folderMagicTrigger.getAttribute('data-folder-key');
+                const folderPath = folderMagicTrigger.getAttribute('data-folder') || '/';
+                const domain = folderMagicTrigger.getAttribute('data-domain') || '';
+                const urls = folderLookupMap.get(folderKey) || [];
+                if (urls.length > 0) {
+                    cancelHoverPreview();
+                    openFolderDiscoveryModal(folderPath, domain, urls, folderMagicTrigger);
+                } else {
+                    showToast('Folder Empty', 'No media URLs in this folder to scan.', 'info');
+                }
+                return;
+            }
+
             const previewTrigger = e.target.closest('.row-preview-trigger');
             if (previewTrigger) {
                 e.preventDefault();
@@ -2300,7 +2377,516 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // -------------------------------------------------------------
-    // 11. Initial Load
+    // Magic Sibling Discovery Lab Controller
+    // -------------------------------------------------------------
+    const discoveryModal = document.getElementById('discovery-modal');
+    const discoveryModalTitle = document.getElementById('discovery-modal-title');
+    const discoveryModalSubtitle = document.getElementById('discovery-modal-subtitle');
+    const discoveryTargetLabel = document.getElementById('discovery-target-label');
+    const discoverySeedUrl = document.getElementById('discovery-seed-url');
+    const discoveryPatternBadge = document.getElementById('discovery-pattern-badge');
+    const discoveryStatusBadge = document.getElementById('discovery-status-badge');
+    const discoveryLoadingState = document.getElementById('discovery-loading-state');
+    const discoveryLoadingMsg = document.getElementById('discovery-loading-msg');
+    const discoveryEmptyState = document.getElementById('discovery-empty-state');
+    const discoveryEmptyTitle = document.getElementById('discovery-empty-title');
+    const discoveryEmptyDesc = document.getElementById('discovery-empty-desc');
+    const discoveryResultsContainer = document.getElementById('discovery-results-container');
+    const discoveryVerifiedCount = document.getElementById('discovery-verified-count');
+    const discoveryNewCount = document.getElementById('discovery-new-count');
+    const discoveryGrid = document.getElementById('discovery-grid');
+    const discoverySelectNewBtn = document.getElementById('discovery-select-new-btn');
+    const discoverySelectAllBtn = document.getElementById('discovery-select-all-btn');
+    const discoveryClearSelBtn = document.getElementById('discovery-clear-sel-btn');
+    const discoveryBtnNewCount = document.getElementById('discovery-btn-new-count');
+    const discoveryBtnAllCount = document.getElementById('discovery-btn-all-count');
+    const discoveryFooterCount = document.getElementById('discovery-footer-count');
+    const discoveryIngestBtn = document.getElementById('discovery-ingest-btn');
+    const discoveryIngestText = document.getElementById('discovery-ingest-text');
+    const closeDiscoveryBtn = document.getElementById('close-discovery-btn');
+    const discoveryCancelBtn = document.getElementById('discovery-cancel-btn');
+
+    let currentDiscoveredSiblings = [];
+    const selectedSiblingUrls = new Set();
+
+    function closeDiscoveryModal() {
+        if (discoveryModal) {
+            discoveryModal.classList.remove('active');
+        }
+        currentDiscoveredSiblings = [];
+        selectedSiblingUrls.clear();
+    }
+
+    if (closeDiscoveryBtn) closeDiscoveryBtn.addEventListener('click', closeDiscoveryModal);
+    if (discoveryCancelBtn) discoveryCancelBtn.addEventListener('click', closeDiscoveryModal);
+    if (discoveryModal) {
+        discoveryModal.addEventListener('click', (e) => {
+            if (e.target === discoveryModal) closeDiscoveryModal();
+        });
+    }
+
+    function syncDiscoveryFilterButtons() {
+        const totalSelected = selectedSiblingUrls.size;
+        const totalItems = currentDiscoveredSiblings.length;
+        const newItems = currentDiscoveredSiblings.filter(s => !s.in_library);
+        const totalNew = newItems.length;
+
+        if (totalItems === 0 || totalSelected === 0) {
+            if (discoverySelectNewBtn) discoverySelectNewBtn.classList.remove('active');
+            if (discoverySelectAllBtn) discoverySelectAllBtn.classList.remove('active');
+            return;
+        }
+
+        const isAllSelected = totalSelected === totalItems;
+        let isOnlyNewSelected = false;
+        if (totalNew > 0 && totalNew < totalItems && totalSelected === totalNew) {
+            isOnlyNewSelected = newItems.every(s => selectedSiblingUrls.has(s.url));
+        }
+
+        if (discoverySelectAllBtn) {
+            discoverySelectAllBtn.classList.toggle('active', isAllSelected);
+        }
+        if (discoverySelectNewBtn) {
+            discoverySelectNewBtn.classList.toggle('active', !isAllSelected && isOnlyNewSelected);
+        }
+    }
+
+    function updateDiscoverySelectionCounts() {
+        const totalSelected = selectedSiblingUrls.size;
+        const totalItems = currentDiscoveredSiblings.length;
+        const newItems = currentDiscoveredSiblings.filter(s => !s.in_library);
+        const totalNew = newItems.length;
+
+        // Smart Adaptive Button Visibility:
+        // When all discovered items are new (totalNew === totalItems) or none are new,
+        // hide "Select New" because "Select All" already serves this purpose.
+        if (discoverySelectNewBtn) {
+            discoverySelectNewBtn.style.display = (totalNew > 0 && totalNew < totalItems) ? 'inline-flex' : 'none';
+        }
+
+        if (discoveryBtnNewCount) discoveryBtnNewCount.textContent = totalNew;
+        if (discoveryBtnAllCount) discoveryBtnAllCount.textContent = totalItems;
+
+        if (discoveryFooterCount) {
+            if (totalSelected === 0) {
+                discoveryFooterCount.innerHTML = `No items selected (0 of ${totalItems})`;
+            } else if (totalSelected === totalItems) {
+                discoveryFooterCount.innerHTML = `All <strong>${totalItems}</strong> items selected`;
+            } else {
+                discoveryFooterCount.innerHTML = `Selected <strong>${totalSelected}</strong> of ${totalItems} items`;
+            }
+        }
+
+        if (discoveryIngestBtn) {
+            discoveryIngestBtn.disabled = totalSelected === 0;
+            if (discoveryIngestText) {
+                discoveryIngestText.textContent = totalSelected > 0 ? `Add to Library (${totalSelected})` : 'Select Items to Add';
+            }
+        }
+
+        if (discoveryClearSelBtn) {
+            discoveryClearSelBtn.disabled = totalSelected === 0;
+        }
+
+        syncDiscoveryFilterButtons();
+    }
+
+    function updateGridCardSelectionStates() {
+        if (!discoveryGrid) return;
+        const cards = discoveryGrid.querySelectorAll('.sibling-card');
+        cards.forEach(card => {
+            const url = card.dataset.url;
+            if (!url) return;
+            const isSelected = selectedSiblingUrls.has(url);
+            const checkbox = card.querySelector('.sibling-checkbox');
+            if (checkbox) checkbox.checked = isSelected;
+            card.classList.toggle('selected', isSelected);
+        });
+        updateDiscoverySelectionCounts();
+    }
+
+    function renderDiscoveredGrid(siblings) {
+        if (!discoveryGrid) return;
+        discoveryGrid.innerHTML = '';
+
+        siblings.forEach(sibling => {
+            const isSelected = selectedSiblingUrls.has(sibling.url);
+            const inLibrary = !!sibling.in_library;
+            const extUpper = (sibling.extension || 'MEDIA').toUpperCase();
+            const sizeText = sibling.size_bytes ? formatBytes(sibling.size_bytes) : extUpper;
+            const thumbUrl = `/api/thumbnail?url=${encodeURIComponent(sibling.url)}&size=320`;
+
+            const card = document.createElement('div');
+            card.className = `sibling-card ${isSelected ? 'selected' : ''} ${inLibrary ? 'in-library' : ''}`;
+            card.dataset.url = sibling.url;
+            card.innerHTML = `
+                <div class="sibling-thumb-wrap">
+                    <img src="${escapeHtml(thumbUrl)}" alt="${escapeHtml(sibling.filename)}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='block';">
+                    <span style="display:none;font-size:11px;font-weight:700;color:var(--muted);">${escapeHtml(extUpper)}</span>
+                    <span class="sibling-status-pill ${inLibrary ? 'existing' : 'new'}">
+                        ${inLibrary ? 'In Index' : 'New'}
+                    </span>
+                </div>
+                <div class="sibling-card-body">
+                    <div class="sibling-row-head">
+                        <input type="checkbox" class="sibling-checkbox" ${isSelected ? 'checked' : ''}>
+                        <span class="sibling-filename" title="${escapeHtml(sibling.filename)}">${escapeHtml(sibling.filename)}</span>
+                    </div>
+                    <div class="sibling-meta-row">
+                        <span>${escapeHtml(extUpper)}</span>
+                        <span>${escapeHtml(sizeText)}</span>
+                    </div>
+                </div>
+            `;
+
+            const checkbox = card.querySelector('.sibling-checkbox');
+            checkbox.addEventListener('change', () => {
+                if (checkbox.checked) {
+                    selectedSiblingUrls.add(sibling.url);
+                    card.classList.add('selected');
+                } else {
+                    selectedSiblingUrls.delete(sibling.url);
+                    card.classList.remove('selected');
+                }
+                updateDiscoverySelectionCounts();
+            });
+
+            card.addEventListener('click', (e) => {
+                if (e.target !== checkbox) {
+                    checkbox.checked = !checkbox.checked;
+                    checkbox.dispatchEvent(new Event('change'));
+                }
+            });
+
+            discoveryGrid.appendChild(card);
+        });
+
+        updateDiscoverySelectionCounts();
+    }
+
+    async function openSiblingDiscoveryModal(seedUrl, triggerBtn = null) {
+        if (!seedUrl || !discoveryModal) return;
+        if (triggerBtn) triggerBtn.classList.add('magic-btn-spinning');
+        discoveryModal.classList.add('active');
+
+        const filename = seedUrl.split('/').pop().split('?')[0] || seedUrl;
+
+        if (discoveryModalTitle) discoveryModalTitle.textContent = 'Find Related Media';
+        if (discoveryModalSubtitle) discoveryModalSubtitle.textContent = 'Discovering additional files in this collection';
+        if (discoveryTargetLabel) discoveryTargetLabel.textContent = 'Source:';
+        if (discoverySeedUrl) {
+            discoverySeedUrl.textContent = filename;
+            discoverySeedUrl.title = seedUrl;
+        }
+
+        if (discoveryLoadingState) discoveryLoadingState.style.display = 'flex';
+        if (discoveryLoadingMsg) discoveryLoadingMsg.textContent = 'Searching for related files...';
+        if (discoveryEmptyState) discoveryEmptyState.style.display = 'none';
+        if (discoveryResultsContainer) discoveryResultsContainer.style.display = 'none';
+        if (discoveryStatusBadge) {
+            discoveryStatusBadge.textContent = 'Searching...';
+            discoveryStatusBadge.className = 'badge-status';
+        }
+
+        currentDiscoveredSiblings = [];
+        selectedSiblingUrls.clear();
+        updateDiscoverySelectionCounts();
+
+        try {
+            const res = await authFetch('/api/discover/siblings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: seedUrl })
+            });
+
+            const data = await res.json();
+            if (discoveryLoadingState) discoveryLoadingState.style.display = 'none';
+
+            if (data.status === 'standalone' || data.status === 'no_pattern') {
+                if (discoveryEmptyState) {
+                    discoveryEmptyState.style.display = 'flex';
+                    if (discoveryEmptyTitle) discoveryEmptyTitle.textContent = 'No Related Media Found';
+                    if (discoveryEmptyDesc) discoveryEmptyDesc.textContent = 'No other files in this collection could be located on the server.';
+                }
+                if (discoveryStatusBadge) discoveryStatusBadge.textContent = 'Single File';
+                return;
+            }
+
+            if (data.status === 'success') {
+                currentDiscoveredSiblings = data.siblings || [];
+                if (!currentDiscoveredSiblings.length) {
+                    if (discoveryEmptyState) {
+                        discoveryEmptyState.style.display = 'flex';
+                        if (discoveryEmptyTitle) discoveryEmptyTitle.textContent = 'No Additional Media Found';
+                        if (discoveryEmptyDesc) discoveryEmptyDesc.textContent = 'All available files for this series are already in your library.';
+                    }
+                    if (discoveryStatusBadge) discoveryStatusBadge.textContent = 'Up to Date';
+                    return;
+                }
+
+                if (discoveryResultsContainer) discoveryResultsContainer.style.display = 'block';
+                if (discoveryStatusBadge) discoveryStatusBadge.textContent = `✓ ${currentDiscoveredSiblings.length} Found`;
+                if (discoveryVerifiedCount) discoveryVerifiedCount.textContent = currentDiscoveredSiblings.length;
+
+                const newItems = currentDiscoveredSiblings.filter(s => !s.in_library);
+                if (discoveryNewCount) discoveryNewCount.textContent = newItems.length;
+
+                if (newItems.length > 0) {
+                    newItems.forEach(s => selectedSiblingUrls.add(s.url));
+                } else {
+                    currentDiscoveredSiblings.forEach(s => selectedSiblingUrls.add(s.url));
+                }
+                renderDiscoveredGrid(currentDiscoveredSiblings);
+            } else {
+                if (discoveryEmptyState) {
+                    discoveryEmptyState.style.display = 'flex';
+                    if (discoveryEmptyTitle) discoveryEmptyTitle.textContent = 'Search Completed';
+                    if (discoveryEmptyDesc) discoveryEmptyDesc.textContent = data.message || 'Could not find additional files for this item.';
+                }
+            }
+        } catch (err) {
+            if (discoveryLoadingState) discoveryLoadingState.style.display = 'none';
+            if (discoveryEmptyState) {
+                discoveryEmptyState.style.display = 'flex';
+                if (discoveryEmptyTitle) discoveryEmptyTitle.textContent = 'Connection Error';
+                if (discoveryEmptyDesc) discoveryEmptyDesc.textContent = 'Could not reach server to discover related media.';
+            }
+        } finally {
+            if (triggerBtn) triggerBtn.classList.remove('magic-btn-spinning');
+        }
+    }
+
+    async function openFolderDiscoveryModal(folderPath, domain, urls, triggerBtn = null) {
+        if (!urls || !urls.length || !discoveryModal) return;
+        if (triggerBtn) triggerBtn.classList.add('magic-btn-spinning');
+        discoveryModal.classList.add('active');
+
+        if (discoveryModalTitle) discoveryModalTitle.textContent = 'Scan Folder Collection';
+        if (discoveryModalSubtitle) discoveryModalSubtitle.textContent = `Searching for missing files in this directory (${urls.length} existing)`;
+        if (discoveryTargetLabel) discoveryTargetLabel.textContent = 'Folder:';
+        if (discoverySeedUrl) {
+            const folderSummary = `${domain || ''}${folderPath} (${urls.length} files)`;
+            discoverySeedUrl.textContent = folderSummary;
+            discoverySeedUrl.title = folderSummary;
+        }
+
+        if (discoveryLoadingState) discoveryLoadingState.style.display = 'flex';
+        if (discoveryLoadingMsg) discoveryLoadingMsg.textContent = 'Scanning folder for missing media...';
+        if (discoveryEmptyState) discoveryEmptyState.style.display = 'none';
+        if (discoveryResultsContainer) discoveryResultsContainer.style.display = 'none';
+        if (discoveryStatusBadge) {
+            discoveryStatusBadge.textContent = 'Scanning...';
+            discoveryStatusBadge.className = 'badge-status';
+        }
+
+        currentDiscoveredSiblings = [];
+        selectedSiblingUrls.clear();
+        updateDiscoverySelectionCounts();
+
+        try {
+            const res = await authFetch('/api/discover/folder-siblings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    folder_path: folderPath,
+                    domain: domain,
+                    urls: urls
+                })
+            });
+
+            const data = await res.json();
+            if (discoveryLoadingState) discoveryLoadingState.style.display = 'none';
+
+            if (data.status === 'standalone' || data.status === 'no_pattern') {
+                if (discoveryEmptyState) {
+                    discoveryEmptyState.style.display = 'flex';
+                    if (discoveryEmptyTitle) discoveryEmptyTitle.textContent = 'No Additional Files Found';
+                    if (discoveryEmptyDesc) discoveryEmptyDesc.textContent = 'All available media files in this folder are already indexed.';
+                }
+                if (discoveryStatusBadge) discoveryStatusBadge.textContent = 'Up to Date';
+                return;
+            }
+
+            if (data.status === 'success') {
+                currentDiscoveredSiblings = data.siblings || [];
+                if (!currentDiscoveredSiblings.length) {
+                    if (discoveryEmptyState) {
+                        discoveryEmptyState.style.display = 'flex';
+                        if (discoveryEmptyTitle) discoveryEmptyTitle.textContent = 'Folder Complete';
+                        if (discoveryEmptyDesc) discoveryEmptyDesc.textContent = 'All media files in this folder collection are already in your library.';
+                    }
+                    if (discoveryStatusBadge) discoveryStatusBadge.textContent = 'Up to Date';
+                    return;
+                }
+
+                if (discoveryResultsContainer) discoveryResultsContainer.style.display = 'block';
+                if (discoveryStatusBadge) discoveryStatusBadge.textContent = `✓ ${currentDiscoveredSiblings.length} Found`;
+                if (discoveryVerifiedCount) discoveryVerifiedCount.textContent = currentDiscoveredSiblings.length;
+
+                const newItems = currentDiscoveredSiblings.filter(s => !s.in_library);
+                if (discoveryNewCount) discoveryNewCount.textContent = newItems.length;
+
+                if (newItems.length > 0) {
+                    newItems.forEach(s => selectedSiblingUrls.add(s.url));
+                } else {
+                    currentDiscoveredSiblings.forEach(s => selectedSiblingUrls.add(s.url));
+                }
+                renderDiscoveredGrid(currentDiscoveredSiblings);
+            } else {
+                if (discoveryEmptyState) {
+                    discoveryEmptyState.style.display = 'flex';
+                    if (discoveryEmptyTitle) discoveryEmptyTitle.textContent = 'Scan Completed';
+                    if (discoveryEmptyDesc) discoveryEmptyDesc.textContent = data.message || 'No additional files found.';
+                }
+            }
+        } catch (err) {
+            if (discoveryLoadingState) discoveryLoadingState.style.display = 'none';
+            if (discoveryEmptyState) {
+                discoveryEmptyState.style.display = 'flex';
+                if (discoveryEmptyTitle) discoveryEmptyTitle.textContent = 'Connection Error';
+                if (discoveryEmptyDesc) discoveryEmptyDesc.textContent = 'Could not reach server to scan folder.';
+            }
+        } finally {
+            if (triggerBtn) triggerBtn.classList.remove('magic-btn-spinning');
+        }
+    }
+
+    if (discoverySelectNewBtn) {
+        discoverySelectNewBtn.addEventListener('click', () => {
+            selectedSiblingUrls.clear();
+            currentDiscoveredSiblings.filter(s => !s.in_library).forEach(s => selectedSiblingUrls.add(s.url));
+            updateGridCardSelectionStates();
+        });
+    }
+
+    if (discoverySelectAllBtn) {
+        discoverySelectAllBtn.addEventListener('click', () => {
+            selectedSiblingUrls.clear();
+            currentDiscoveredSiblings.forEach(s => selectedSiblingUrls.add(s.url));
+            updateGridCardSelectionStates();
+        });
+    }
+
+    if (discoveryClearSelBtn) {
+        discoveryClearSelBtn.addEventListener('click', () => {
+            selectedSiblingUrls.clear();
+            updateGridCardSelectionStates();
+        });
+    }
+
+    if (discoveryIngestBtn) {
+        discoveryIngestBtn.addEventListener('click', async () => {
+            const urls = Array.from(selectedSiblingUrls);
+            if (!urls.length) return;
+
+            discoveryIngestBtn.disabled = true;
+            if (discoveryIngestText) discoveryIngestText.textContent = `Ingesting ${urls.length}...`;
+
+            try {
+                const res = await authFetch('/api/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ urls })
+                });
+
+                if (res.ok) {
+                    showToast('Magic Discovery', `✓ Successfully added ${urls.length} verified sibling assets!`, 'success', 4000);
+                    closeDiscoveryModal();
+                    await loadTreeData();
+                } else {
+                    showToast('Import Error', 'Failed to import discovered siblings.', 'error');
+                    discoveryIngestBtn.disabled = false;
+                    updateDiscoverySelectionCounts();
+                }
+            } catch (err) {
+                showToast('Network Error', err.message, 'error');
+                discoveryIngestBtn.disabled = false;
+                updateDiscoverySelectionCounts();
+            }
+        });
+    }
+
+    // -------------------------------------------------------------
+    // 11. Real-Time Cross-Tab & Extension Synchronization
+    // -------------------------------------------------------------
+    let lastSyncTimestamp = 0;
+    const syncBroadcastChannel = typeof BroadcastChannel !== 'undefined'
+        ? new BroadcastChannel('media_index_sync_channel')
+        : null;
+
+    async function handleLiveSyncEvent(detail) {
+        if (!detail) return;
+        const now = Date.now();
+        // Debounce rapid sync events within 500ms
+        if (now - lastSyncTimestamp < 500) return;
+        lastSyncTimestamp = now;
+
+        const count = detail.count || 1;
+        const targetUser = detail.userId || 'default';
+        if (targetUser && targetUser !== currentUserId && currentUserId !== 'default') {
+            return;
+        }
+
+        // Silently reload tree and grid data with 0 scroll disruption
+        await loadTreeData();
+
+        // Display confirmation toast
+        showToast(
+            'Extension Sync',
+            `Received ${count} new media asset${count > 1 ? 's' : ''} from Companion.`,
+            'success',
+            3500
+        );
+
+        // Forward to other open tabs in the same origin
+        if (syncBroadcastChannel && detail.broadcast !== false) {
+            syncBroadcastChannel.postMessage({
+                ...detail,
+                broadcast: false
+            });
+        }
+    }
+
+    window.addEventListener('media-index-sync', (e) => {
+        handleLiveSyncEvent(e.detail);
+    });
+
+    window.addEventListener('message', (e) => {
+        if (e.data && e.data.type === 'MEDIA_INDEX_SYNC') {
+            handleLiveSyncEvent(e.data);
+        }
+    });
+
+    if (syncBroadcastChannel) {
+        syncBroadcastChannel.onmessage = (e) => {
+            if (e.data && e.data.type === 'MEDIA_INDEX_SYNC') {
+                handleLiveSyncEvent(e.data);
+            }
+        };
+    }
+
+    // Tab Focus & Visibility Auto-Revalidation
+    let lastFocusCheckTime = Date.now();
+    async function revalidateOnFocus() {
+        const now = Date.now();
+        // If tab was unfocused or idle for more than 2.5s, silently sync state
+        if (now - lastFocusCheckTime > 2500) {
+            lastFocusCheckTime = now;
+            try {
+                await loadTreeData();
+            } catch {}
+        }
+    }
+
+    window.addEventListener('focus', revalidateOnFocus);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            revalidateOnFocus();
+        }
+    });
+
+    // -------------------------------------------------------------
+    // 12. Initial Load
     // -------------------------------------------------------------
     setFocusMode(isFocusMode, true);
     setViewMode(currentViewMode);

@@ -1,6 +1,7 @@
 /**
  * media index — Background Service Worker (Manifest V3)
- * Handles context menus, badge counts, and async API communication.
+ * Handles context menus, badge counts, async API communication,
+ * Render cold-start wake-up recovery, and real-time state synchronization.
  */
 
 try {
@@ -9,18 +10,34 @@ try {
   console.warn('[media index] Could not import config.js:', e);
 }
 
-const DEFAULT_API_BASE = (typeof CONFIG !== 'undefined' && CONFIG.DEFAULT_API_BASE)
-  ? CONFIG.DEFAULT_API_BASE
+const PRODUCTION_API = (typeof CONFIG !== 'undefined' && CONFIG.PRODUCTION_API_BASE)
+  ? CONFIG.PRODUCTION_API_BASE
+  : 'https://media-index.onrender.com';
+
+const DEFAULT_DEV_API = (typeof CONFIG !== 'undefined' && CONFIG.DEFAULT_DEV_API_BASE)
+  ? CONFIG.DEFAULT_DEV_API_BASE
   : 'http://127.0.0.1:5000';
 
+const DEFAULT_USER_ID = (typeof CONFIG !== 'undefined' && CONFIG.DEFAULT_USER_ID)
+  ? CONFIG.DEFAULT_USER_ID
+  : 'default';
+
 // ---------------------------------------------------------------
-// Helper: read config from storage with fallback defaults
+// Helper: read config from storage with smart environment resolution
 // ---------------------------------------------------------------
 async function getConfig() {
-  const config = await chrome.storage.local.get(['apiUrl', 'userId']);
+  const stored = await chrome.storage.local.get(['apiUrl', 'devModeEnabled', 'devApiUrl', 'userId']);
+  let apiBase;
+  if (typeof CONFIG !== 'undefined' && typeof CONFIG.resolveApiUrl === 'function') {
+    apiBase = CONFIG.resolveApiUrl(stored);
+  } else {
+    apiBase = stored.devModeEnabled ? (stored.devApiUrl || DEFAULT_DEV_API) : PRODUCTION_API;
+  }
+
   return {
-    apiBase: config.apiUrl || DEFAULT_API_BASE,
-    userId: config.userId || (typeof CONFIG !== 'undefined' ? CONFIG.DEFAULT_USER_ID : 'default')
+    apiBase: apiBase.replace(/\/+$/, ''),
+    userId: (stored.userId || DEFAULT_USER_ID).trim(),
+    devModeEnabled: !!stored.devModeEnabled
   };
 }
 
@@ -48,10 +65,113 @@ async function flashBadge(tabId, text, color, durationMs = 2500) {
   try {
     await chrome.action.setBadgeText({ tabId, text });
     await chrome.action.setBadgeBackgroundColor({ tabId, color });
-    setTimeout(() => chrome.action.setBadgeText({ tabId, text: '' }).catch(() => { }), durationMs);
+    if (durationMs > 0) {
+      setTimeout(() => chrome.action.setBadgeText({ tabId, text: '' }).catch(() => { }), durationMs);
+    }
   } catch (e) {
     console.warn('[media index] Badge error:', e);
   }
+}
+
+// ---------------------------------------------------------------
+// Helper: Origin Matcher (Treats 127.0.0.1 and localhost as equivalent)
+// ---------------------------------------------------------------
+function originsMatch(urlA, urlB) {
+  try {
+    const a = new URL(urlA);
+    const b = new URL(urlB);
+    if (a.origin === b.origin) return true;
+    const isALocal = a.hostname === '127.0.0.1' || a.hostname === 'localhost';
+    const isBLocal = b.hostname === '127.0.0.1' || b.hostname === 'localhost';
+    if (isALocal && isBLocal && a.port === b.port && a.protocol === b.protocol) {
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+// ---------------------------------------------------------------
+// Helper: Broadcast Real-Time Sync Event to Open Dashboard Tabs
+// ---------------------------------------------------------------
+async function broadcastSyncEvent(apiBase, userId, count, addedUrls = []) {
+  try {
+    const tabs = await chrome.tabs.query({});
+    const syncPayload = {
+      action: 'MEDIA_INDEX_SYNC',
+      apiBase,
+      userId,
+      count,
+      urls: addedUrls,
+      timestamp: Date.now()
+    };
+
+    for (const tab of tabs) {
+      if (!tab.url || !tab.id) continue;
+      try {
+        const isMatchedOrigin = originsMatch(tab.url, apiBase);
+        const isTitleMatch = tab.title && (tab.title.toLowerCase().includes('media index') || tab.title.toLowerCase().includes('media url analyzer'));
+
+        if (isMatchedOrigin || isTitleMatch) {
+          chrome.tabs.sendMessage(tab.id, syncPayload, () => {
+            if (chrome.runtime.lastError) {
+              chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                files: ['content.js']
+              }).then(() => {
+                chrome.tabs.sendMessage(tab.id, syncPayload).catch(() => {});
+              }).catch(() => {});
+            }
+          });
+        }
+      } catch (e) {
+        console.debug('[media index] broadcast tab check note:', e);
+      }
+    }
+  } catch (err) {
+    console.debug('[media index] broadcastSyncEvent note:', err);
+  }
+}
+
+// ---------------------------------------------------------------
+// Helper: Ping with Cloud Cold-Start Wake-up Recovery
+// ---------------------------------------------------------------
+async function pingOrWakeupServer(apiBase, onWakingCallback = null) {
+  // Quick initial check (3.5s) using /api/tree
+  try {
+    const quickRes = await fetch(`${apiBase}/api/tree`, {
+      signal: AbortSignal.timeout(3500)
+    });
+    if (quickRes.ok) {
+      return { online: true, wokeUp: false };
+    }
+  } catch {}
+
+  const isCloud = (typeof CONFIG !== 'undefined' && typeof CONFIG.isCloudHost === 'function')
+    ? CONFIG.isCloudHost(apiBase)
+    : apiBase.includes('onrender.com');
+
+  if (onWakingCallback) {
+    onWakingCallback(isCloud);
+  }
+
+  // Polling loop for cloud instance spin-up (up to 60s)
+  const maxWaitMs = (typeof CONFIG !== 'undefined' && CONFIG.COLD_START_TIMEOUT_MS) || 60000;
+  const intervalMs = (typeof CONFIG !== 'undefined' && CONFIG.PING_INTERVAL_MS) || 4000;
+  const start = Date.now();
+
+  while (Date.now() - start < maxWaitMs) {
+    await new Promise(res => setTimeout(res, intervalMs));
+    try {
+      const retryRes = await fetch(`${apiBase}/api/tree`, {
+        signal: AbortSignal.timeout(4000)
+      });
+      if (retryRes.ok) {
+        return { online: true, wokeUp: true };
+      }
+    } catch {}
+  }
+
+  return { online: false, timeout: true };
 }
 
 // ---------------------------------------------------------------
@@ -96,7 +216,6 @@ async function submitBatchUrls(urls, apiBase, userId) {
 // 1. Context Menu Setup on Install
 // ---------------------------------------------------------------
 chrome.runtime.onInstalled.addListener(() => {
-  // Remove any stale menu first to avoid duplicate errors
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
       id: 'send_media_to_index',
@@ -105,16 +224,20 @@ chrome.runtime.onInstalled.addListener(() => {
     });
   });
 
-  // Set default api URL if not already stored
-  chrome.storage.local.get(['apiUrl'], (res) => {
-    if (!res.apiUrl) {
-      chrome.storage.local.set({ apiUrl: DEFAULT_API_BASE });
+  // Initialize smart defaults
+  chrome.storage.local.get(['devModeEnabled', 'devApiUrl', 'userId'], (res) => {
+    const updates = {};
+    if (res.devModeEnabled === undefined) updates.devModeEnabled = false;
+    if (!res.devApiUrl) updates.devApiUrl = DEFAULT_DEV_API;
+    if (!res.userId) updates.userId = DEFAULT_USER_ID;
+    if (Object.keys(updates).length > 0) {
+      chrome.storage.local.set(updates);
     }
   });
 });
 
 // ---------------------------------------------------------------
-// 2. Context Menu Click Handler
+// 2. Context Menu Click Handler (with Cold-Start Resilience)
 // ---------------------------------------------------------------
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== 'send_media_to_index') return;
@@ -128,31 +251,32 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   try {
     const { apiBase, userId } = await getConfig();
 
-    // Pre-flight connection check
-    let serverUp = false;
-    try {
-      const ping = await fetch(`${apiBase}/api/tree`, {
-        signal: AbortSignal.timeout(3000)
-      });
-      serverUp = ping.ok;
-    } catch {
-      serverUp = false;
-    }
+    if (tab?.id) await flashBadge(tab.id, '...', '#6558dd', 0);
 
-    if (!serverUp) {
+    const pingStatus = await pingOrWakeupServer(apiBase, (isCloud) => {
+      if (tab?.id) flashBadge(tab.id, '⏳', '#f59e0b', 0);
+      if (isCloud) {
+        notify(
+          'Connecting to Server...',
+          'Cloud server is starting up. Ingestion queued and will save automatically.'
+        );
+      }
+    });
+
+    if (!pingStatus.online) {
       notify(
-        'Server Offline',
-        `Cannot reach media index at ${apiBase}. Make sure app.py is running, then try again.`
+        'Server Unreachable',
+        `Could not reach media index at ${apiBase} after 60s. Please check server status.`
       );
       if (tab?.id) await flashBadge(tab.id, '!', '#ef4444', 4000);
       return;
     }
 
-    // Send the URL
+    // Server is ready, submit the URL
     const data = await submitSingleUrl(targetUrl, apiBase, userId);
 
     const isDup = data.is_duplicate || false;
-    const label = isDup ? 'Already in Library' : 'Saved!';
+    const label = isDup ? 'Already in Library' : (pingStatus.wokeUp ? 'Server Awake & Saved!' : 'Saved!');
     const urlShort = targetUrl.length > 60 ? targetUrl.slice(0, 57) + '...' : targetUrl;
 
     notify(label, urlShort);
@@ -161,9 +285,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       await flashBadge(tab.id, isDup ? '=' : '✓', isDup ? '#8b5cf6' : '#10b981', 3000);
     }
 
+    // Real-Time Sync notification to active dashboard tabs
+    await broadcastSyncEvent(apiBase, userId, 1, [targetUrl]);
+
   } catch (err) {
     console.error('[media index] Context menu submission failed:', err);
-    notify('Send Failed', `Error: ${err.message}. Is media index (app.py) running?`);
+    notify('Send Failed', `Error: ${err.message}`);
     if (tab?.id) await flashBadge(tab.id, '✗', '#ef4444', 4000);
   }
 });
@@ -172,6 +299,16 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // 3. Message Listener (from popup and content scripts)
 // ---------------------------------------------------------------
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+
+  // Zero-Type User Identity Sync from Web Dashboard
+  if (message.action === 'SYNC_USER_IDENTITY') {
+    const detectedUserId = (message.userId || DEFAULT_USER_ID).trim();
+    chrome.storage.local.set({ userId: detectedUserId }, () => {
+      console.log('[media index] Auto-synced user identity from dashboard:', detectedUserId);
+    });
+    sendResponse({ status: 'ok', userId: detectedUserId });
+    return false;
+  }
 
   // Badge count update from content script
   if (message.action === 'UPDATE_BADGE_COUNT') {
@@ -205,6 +342,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const data = await submitBatchUrls(urls, apiBase, userId);
 
         if (data.status === 'success') {
+          // Trigger real-time sync across dashboard tabs
+          broadcastSyncEvent(apiBase, userId, urls.length, urls);
+
           sendResponse({
             status: 'success',
             imported: data.imported ?? urls.length,
@@ -221,7 +361,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         console.error('[media index] SUBMIT_URLS failed:', err);
         sendResponse({
           status: 'error',
-          message: `Could not connect to media index. Is app.py running? (${err.message})`
+          message: `Could not connect to media index at ${apiBase}: ${err.message}`
         });
       }
     })();
@@ -232,17 +372,47 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'CHECK_CONNECTION') {
     (async () => {
       try {
-        const { apiBase } = await getConfig();
-        const response = await fetch(`${apiBase}/api/tree`, {
-          signal: AbortSignal.timeout(3000)
-        });
-        if (response.ok) {
-          sendResponse({ connected: true, apiBase });
-        } else {
-          sendResponse({ connected: false, error: `HTTP ${response.status}` });
+        const { apiBase, devModeEnabled } = await getConfig();
+        const isCloud = (typeof CONFIG !== 'undefined' && typeof CONFIG.isCloudHost === 'function')
+          ? CONFIG.isCloudHost(apiBase)
+          : apiBase.includes('onrender.com');
+
+        try {
+          const quickRes = await fetch(`${apiBase}/api/tree`, {
+            signal: AbortSignal.timeout(3500)
+          });
+          if (quickRes.ok) {
+            sendResponse({
+              connected: true,
+              apiBase,
+              devModeEnabled,
+              isCloud,
+              wakingUp: false
+            });
+            return;
+          }
+        } catch (quickErr) {
+          sendResponse({
+            connected: false,
+            apiBase,
+            devModeEnabled,
+            isCloud,
+            wakingUp: isCloud,
+            error: quickErr.message || 'Unreachable'
+          });
+          return;
         }
+
+        sendResponse({
+          connected: false,
+          apiBase,
+          devModeEnabled,
+          isCloud,
+          wakingUp: isCloud,
+          error: 'Bad response'
+        });
       } catch (err) {
-        sendResponse({ connected: false, error: err.message });
+        sendResponse({ connected: false, error: err.message, wakingUp: false });
       }
     })();
     return true;

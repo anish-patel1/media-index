@@ -2,6 +2,7 @@
  * media index — Content Script
  * Scans page DOM for media assets (images, videos, GIFs, audio)
  * and communicates with the extension popup and background service worker.
+ * Bridges real-time sync events from extension to active media-index dashboard tabs.
  */
 
 (function () {
@@ -100,62 +101,59 @@
       mediaMap.set(cleanUrl, {
         url: cleanUrl,
         type: inferredType,
-        extension: ext.toUpperCase() || (inferredType.toUpperCase()),
-        width: width > 0 ? width : null,
-        height: height > 0 ? height : null,
-        alt: alt.trim().slice(0, 100),
-        pageTitle: document.title || window.location.hostname
+        extension: ext || 'bin',
+        width,
+        height,
+        alt: alt.slice(0, 80)
       });
     }
 
-    // 1. Scan <img> elements
-    const images = document.querySelectorAll('img');
-    images.forEach(img => {
-      // Check currentSrc or src
-      const src = img.currentSrc || img.src || img.getAttribute('data-src') || img.getAttribute('data-original');
-      if (src) addAsset(src, 'image', img);
-
-      // Check srcset
-      const srcset = img.getAttribute('srcset');
-      if (srcset) {
-        extractUrlsFromSrcset(srcset).forEach(u => addAsset(u, 'image', img));
+    // 1. <img> tags
+    document.querySelectorAll('img').forEach(img => {
+      const src = img.currentSrc || img.src || img.getAttribute('data-src');
+      if (src) addAsset(src, src.toLowerCase().includes('.gif') ? 'gif' : 'image', img);
+      if (img.srcset) {
+        extractUrlsFromSrcset(img.srcset).forEach(u => addAsset(u, 'image', img));
       }
     });
 
-    // 2. Scan <picture> and <source>
-    const sources = document.querySelectorAll('picture source, video source, audio source');
-    sources.forEach(source => {
-      const parentTag = source.parentElement ? source.parentElement.tagName.toLowerCase() : 'picture';
-      const type = parentTag === 'video' ? 'video' : (parentTag === 'audio' ? 'audio' : 'image');
-
-      if (source.src) addAsset(source.src, type, source);
+    // 2. <picture> <source> tags
+    document.querySelectorAll('picture source').forEach(source => {
       if (source.srcset) {
-        extractUrlsFromSrcset(source.srcset).forEach(u => addAsset(u, type, source));
+        extractUrlsFromSrcset(source.srcset).forEach(u => addAsset(u, 'image', source));
       }
     });
 
-    // 3. Scan <video> elements
-    const videos = document.querySelectorAll('video');
-    videos.forEach(vid => {
-      if (vid.src) addAsset(vid.src, 'video', vid);
-      if (vid.poster) addAsset(vid.poster, 'image', vid);
+    // 3. <video> tags
+    document.querySelectorAll('video').forEach(video => {
+      if (video.src) addAsset(video.src, 'video', video);
+      if (video.poster) addAsset(video.poster, 'image', video);
+      video.querySelectorAll('source').forEach(s => {
+        if (s.src) addAsset(s.src, 'video', video);
+      });
     });
 
-    // 4. Scan <a> links that point to media files
-    const links = document.querySelectorAll('a[href]');
-    links.forEach(a => {
+    // 4. <audio> tags
+    document.querySelectorAll('audio').forEach(audio => {
+      if (audio.src) addAsset(audio.src, 'audio', audio);
+      audio.querySelectorAll('source').forEach(s => {
+        if (s.src) addAsset(s.src, 'audio', audio);
+      });
+    });
+
+    // 5. <a> anchor links to media
+    document.querySelectorAll('a[href]').forEach(a => {
       const href = a.href;
       const ext = getExtension(href);
-      if (ext && MEDIA_EXTENSIONS.has(ext)) {
+      if (MEDIA_EXTENSIONS.has(ext)) {
         addAsset(href, null, a);
       }
     });
 
-    // 5. Scan key containers for CSS background-image
-    const bgElements = document.querySelectorAll('header, banner, section, [class*="thumb"], [class*="hero"], [class*="cover"], [class*="bg-"]');
-    bgElements.forEach(el => {
-      const bgUrls = extractCssBackgroundUrls(el);
-      bgUrls.forEach(u => addAsset(u, 'image', el));
+    // 6. CSS background-image on visible elements
+    const sampleElements = document.querySelectorAll('header, div, section, hero, banner, [style*="background"]');
+    sampleElements.forEach(el => {
+      extractCssBackgroundUrls(el).forEach(u => addAsset(u, 'image', el));
     });
 
     return Array.from(mediaMap.values());
@@ -174,12 +172,74 @@
     } catch {}
   }
 
-  // Initial scan after DOM settles
+  // ---------------------------------------------------------------
+  // Zero-Type Dashboard Detection & Proactive Identity Synchronization
+  // ---------------------------------------------------------------
+  function isDashboardPage() {
+    try {
+      const hostname = window.location.hostname.toLowerCase();
+      const isKnownHost = hostname.endsWith('onrender.com') ||
+        hostname === '127.0.0.1' ||
+        hostname === 'localhost';
+      const hasTree = !!document.getElementById('url-tree');
+      const hasTitle = document.title.includes('media index') || document.title.includes('Media URL Analyzer');
+      return (isKnownHost && (hasTree || hasTitle)) || (hasTree && hasTitle);
+    } catch {
+      return false;
+    }
+  }
+
+  function syncDashboardIdentity() {
+    if (!isDashboardPage()) return;
+    try {
+      const userId = (localStorage.getItem('mua_user_id') || 'default').trim();
+      chrome.runtime.sendMessage({
+        action: 'SYNC_USER_IDENTITY',
+        userId,
+        origin: window.location.origin,
+        title: document.title
+      }).catch(() => {
+        // Background listener may be idle
+      });
+    } catch {
+      // LocalStorage or messaging boundary error
+    }
+  }
+
+  // Auto-sync user identification on page load & DOM updates
   if (document.readyState === 'complete' || document.readyState === 'interactive') {
     setTimeout(notifyBadgeCount, 800);
+    setTimeout(syncDashboardIdentity, 600);
   } else {
-    window.addEventListener('DOMContentLoaded', () => setTimeout(notifyBadgeCount, 800));
+    window.addEventListener('DOMContentLoaded', () => {
+      setTimeout(notifyBadgeCount, 800);
+      setTimeout(syncDashboardIdentity, 600);
+    });
   }
+
+  // Listen for storage events (e.g. if web app updates mua_user_id)
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'mua_user_id' && e.newValue) {
+      chrome.runtime.sendMessage({
+        action: 'SYNC_USER_IDENTITY',
+        userId: e.newValue.trim(),
+        origin: window.location.origin,
+        title: document.title
+      }).catch(() => {});
+    }
+  });
+
+  // Listen for custom dispatch events from web app (e.g. login / profile switch)
+  window.addEventListener('media-index-auth-change', (e) => {
+    if (e.detail && e.detail.userId) {
+      chrome.runtime.sendMessage({
+        action: 'SYNC_USER_IDENTITY',
+        userId: String(e.detail.userId).trim(),
+        origin: window.location.origin,
+        title: document.title
+      }).catch(() => {});
+    }
+  });
 
   // Listen for requests from popup or background service worker
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -192,7 +252,42 @@
         total: assets.length,
         media: assets
       });
-      return false; // synchronous response
+      return false;
+    }
+
+    // Real-Time Cross-Tab Synchronization Bridge
+    if (message.action === 'MEDIA_INDEX_SYNC') {
+      try {
+        const detail = {
+          userId: message.userId,
+          count: message.count,
+          urls: message.urls || [],
+          timestamp: message.timestamp || Date.now()
+        };
+
+        window.dispatchEvent(new CustomEvent('media-index-sync', { detail }));
+        window.postMessage({
+          type: 'MEDIA_INDEX_SYNC',
+          ...detail
+        }, '*');
+      } catch (e) {
+        console.warn('[media index] Dispatch sync event error:', e);
+      }
+      sendResponse({ status: 'ok' });
+      return false;
+    }
+
+    // Dashboard State Discovery (for 1-click pairing & zero-type query)
+    if (message.action === 'GET_DASHBOARD_STATE') {
+      const isDashboard = isDashboardPage();
+      const userId = (localStorage.getItem('mua_user_id') || 'default').trim();
+      sendResponse({
+        isDashboard,
+        userId,
+        title: document.title,
+        origin: window.location.origin
+      });
+      return false;
     }
   });
 

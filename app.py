@@ -11,6 +11,7 @@ from database import URLDatabase
 from enricher import MetadataEnricher
 from thumbnail_manager import get_or_create_thumbnail
 from cluster_engine import ClusterEngine
+from sibling_engine import SiblingEngine
 
 
 # Initialize Flask app
@@ -19,6 +20,7 @@ app = Flask(__name__)
 # Determine database path (allows override via environment variable for isolated tests)
 DB_PATH = os.environ.get("URL_DB_PATH", "url_database.json")
 db = URLDatabase(DB_PATH)
+sibling_engine = SiblingEngine()
 
 
 def get_user_id() -> str:
@@ -81,6 +83,21 @@ def index():
 def favicon():
     """Serves the website favicon."""
     return send_from_directory(os.path.join(app.root_path, "static"), "favicon.ico", mimetype="image/x-icon")
+
+
+@app.route("/api/handshake", methods=["GET"])
+def handshake():
+    """Returns app health status, metadata, and available user namespaces
+    for extension auto-discovery and zero-error configuration.
+    """
+    namespaces = db.get_namespaces()
+    return jsonify({
+        "status": "ok",
+        "app": "media-index",
+        "version": "2.0.0",
+        "active_namespaces": namespaces,
+        "current_storage_backend": "json"
+    }), 200
 
 
 @app.route("/api/urls", methods=["POST"])
@@ -242,6 +259,61 @@ def get_tree():
             "status": "error",
             "message": f"Failed to retrieve tree structure: {str(e)}"
         }), 500
+
+
+@app.route("/api/discover/siblings", methods=["POST"])
+def discover_siblings():
+    """Analyzes a seed media URL for sequence patterns and verifies
+    active sibling media assets on the source server with a zero-404 guarantee.
+    """
+    if not request.is_json:
+        return jsonify({"status": "error", "message": "Content-Type must be application/json."}), 400
+
+    payload = request.get_json(silent=True) or {}
+    url = (payload.get("url") or "").strip()
+    if not url:
+        return jsonify({"status": "error", "message": "Missing or empty 'url' parameter."}), 400
+
+    user_id = get_user_id()
+
+    try:
+        result = sibling_engine.discover_siblings(url)
+        for sibling in result.get("siblings", []):
+            sibling["in_library"] = db.has_url(sibling["url"], user_id=user_id)
+
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/discover/folder-siblings", methods=["POST"])
+def discover_folder_siblings():
+    """Probes and discovers sibling media assets across all seed files in a directory/folder."""
+    if not request.is_json:
+        return jsonify({"status": "error", "message": "Content-Type must be application/json."}), 400
+
+    payload = request.get_json(silent=True) or {}
+    folder_path = payload.get("folder_path", "")
+    domain = payload.get("domain", "")
+    urls = payload.get("urls", [])
+
+    if not urls or not isinstance(urls, list):
+        return jsonify({"status": "error", "message": "Missing or invalid 'urls' list for folder discovery."}), 400
+
+    user_id = get_user_id()
+
+    try:
+        result = sibling_engine.discover_folder_siblings(
+            folder_path=folder_path,
+            domain=domain,
+            urls=urls
+        )
+        for sibling in result.get("siblings", []):
+            sibling["in_library"] = db.has_url(sibling["url"], user_id=user_id)
+
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.route("/api/clusters", methods=["GET"])

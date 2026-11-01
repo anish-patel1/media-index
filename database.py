@@ -279,6 +279,20 @@ class URLDatabase:
         self._save(data)
         return {"status": "success", "message": "All dismissed duplicate groups have been reset."}
 
+    def get_namespaces(self) -> list:
+        """Returns a sorted list of all active user namespaces, ensuring 'default' is always present."""
+        data = self._load()
+        users = data.get("users", {})
+        namespaces = set(users.keys())
+        namespaces.add("default")
+        return sorted(list(namespaces))
+
+    def has_url(self, raw_url: str, user_id: str = "default") -> bool:
+        """Returns True if the URL already exists in the specified user namespace."""
+        data = self._load()
+        _, urls = self._resolve_user_urls(data, user_id)
+        return raw_url in urls
+
 
     def get_tree(self, user_id: str = "default") -> dict:
         """Reconstructs stored URLs for a specific user into a hierarchical folder-like tree

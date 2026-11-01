@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>media index — Settings</title>
+  <title>media index — Settings & Connection</title>
   <style>
     :root {
       --primary: #6558dd;
@@ -13,9 +13,17 @@
       --card-bg: #ffffff;
       --text: #1e1b4b;
       --text-muted: #6b7280;
+      --text-sub: #4b5563;
       --border: #e2e8f0;
       --green: #10b981;
+      --green-soft: #ecfdf5;
+      --green-border: #a7f3d0;
       --red: #ef4444;
+      --red-soft: #fef2f2;
+      --red-border: #fecaca;
+      --amber: #f59e0b;
+      --amber-soft: #fffbeb;
+      --amber-border: #fde68a;
       --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     }
@@ -38,7 +46,7 @@
 
     .container {
       width: 100%;
-      max-width: 580px;
+      max-width: 540px;
     }
 
     .header {
@@ -107,7 +115,7 @@
     .card-title {
       font-size: 15px;
       font-weight: 700;
-      margin-bottom: 6px;
+      margin-bottom: 4px;
       display: flex;
       align-items: center;
       gap: 8px;
@@ -116,25 +124,91 @@
     .card-desc {
       font-size: 12.5px;
       color: var(--text-muted);
-      margin-bottom: 18px;
+      margin-bottom: 16px;
       line-height: 1.5;
     }
 
-    .form-group {
-      margin-bottom: 16px;
+    /* Dev Mode Card & Modern Toggle */
+    .dev-mode-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
     }
 
-    label {
+    .switch-toggle {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+
+    .switch-toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-track {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #cbd5e1;
+      transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 24px;
+    }
+
+    .toggle-track:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+    }
+
+    .switch-toggle input:checked + .toggle-track {
+      background-color: var(--primary);
+    }
+
+    .switch-toggle input:checked + .toggle-track:before {
+      transform: translateX(20px);
+    }
+
+    .dev-container {
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      animation: fadeIn 0.2s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .form-group label {
       display: block;
       font-size: 12px;
       font-weight: 600;
       color: var(--text);
-      margin-bottom: 6px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
+      margin-bottom: 6px;
     }
 
-    input[type="text"], input[type="url"] {
+    input[type="url"], input[type="text"] {
       width: 100%;
       padding: 10px 14px;
       font-size: 13.5px;
@@ -147,18 +221,105 @@
       background: #fafafa;
     }
 
-    input[type="text"]:focus, input[type="url"]:focus {
+    input[type="url"]:focus, input[type="text"]:focus {
       border-color: var(--primary);
       background: #ffffff;
       box-shadow: 0 0 0 3px rgba(101, 88, 221, 0.15);
     }
 
-    .help-text {
-      font-size: 11.5px;
-      color: var(--text-muted);
-      margin-top: 5px;
+    .presets-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
+    .presets-label {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .preset-pill {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11.5px;
+      font-family: var(--mono);
+      color: var(--text-sub);
+      cursor: pointer;
+      transition: all 0.12s ease;
+    }
+
+    .preset-pill:hover {
+      background: var(--primary-soft);
+      border-color: #d1ccf8;
+      color: var(--primary);
+    }
+
+    /* Ping Status Line */
+    .ping-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #f1effc;
+    }
+
+    .ping-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #9ca3af;
+      flex-shrink: 0;
+    }
+
+    .ping-dot.online {
+      background: var(--green);
+    }
+
+    .ping-dot.offline {
+      background: var(--red);
+    }
+
+    .ping-dot.waking {
+      background: var(--amber);
+      animation: pulse-amber 1.6s infinite;
+    }
+
+    @keyframes pulse-amber {
+      0% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+      }
+      70% {
+        transform: scale(1);
+        box-shadow: 0 0 0 8px rgba(245, 158, 11, 0);
+      }
+      100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+      }
+    }
+
+    .ping-msg.online {
+      color: #065f46;
+      font-weight: 600;
+    }
+
+    .ping-msg.offline {
+      color: #991b1b;
+      font-weight: 600;
+    }
+
+    .ping-msg.waking {
+      color: #b45309;
+      font-weight: 600;
+    }
+
+    /* Actions & Status */
     .actions {
       display: flex;
       align-items: center;
@@ -211,16 +372,16 @@
 
     .status-box.success {
       display: flex;
-      background: #ecfdf5;
+      background: var(--green-soft);
       color: #065f46;
-      border: 1px solid #a7f3d0;
+      border: 1px solid var(--green-border);
     }
 
     .status-box.error {
       display: flex;
-      background: #fef2f2;
+      background: var(--red-soft);
       color: #991b1b;
-      border: 1px solid #fecaca;
+      border: 1px solid var(--red-border);
     }
 
     .status-box.info {
@@ -244,42 +405,60 @@
       <img src="icons/icon-48.png" alt="media index" class="brand-mark">
       <div class="header-text">
         <h1 class="brand-title"><strong>media<span>index</span></strong> <span class="brand-subtitle-tag">settings</span></h1>
-        <p>Single source of truth configuration for extension & backend communication</p>
+        <p>Simple & Smart Server Configuration</p>
       </div>
     </div>
 
+    <!-- Developer Mode Card -->
     <div class="card">
-      <div class="card-title">🌐 Backend API Configuration</div>
-      <p class="card-desc">
-        Configure where all ingested media URLs and metadata are sent. Switching between local development and production only requires updating this URL.
-      </p>
-
-      <div class="form-group">
-        <label for="api-url">Backend Base URL</label>
-        <input type="url" id="api-url" placeholder="http://127.0.0.1:5000" spellcheck="false" required>
-        <p class="help-text" id="default-hint">Default: http://127.0.0.1:5000 (from config.js)</p>
+      <div class="dev-mode-head">
+        <div>
+          <div class="card-title">🛠️ Developer Mode</div>
+          <p class="card-desc" id="env-desc" style="margin-bottom: 0;">
+            Connected to Live Server
+          </p>
+        </div>
+        <label class="switch-toggle" title="Toggle Developer Mode">
+          <input type="checkbox" id="dev-toggle">
+          <span class="toggle-track"></span>
+        </label>
       </div>
 
-      <div class="form-group">
-        <label for="user-id">User ID Namespace</label>
-        <input type="text" id="user-id" placeholder="default" spellcheck="false">
-        <p class="help-text">Namespace for stored URLs. Must match the web dashboard (default: "default").</p>
+      <!-- Collapsible Local Dev Settings -->
+      <div class="dev-container" id="dev-container" style="display: none;">
+        <div class="form-group">
+          <label for="dev-api-url">Local Server URL</label>
+          <input type="url" id="dev-api-url" placeholder="http://127.0.0.1:5000" spellcheck="false">
+        </div>
+
+        <div class="presets-row">
+          <span class="presets-label">Quick Presets:</span>
+          <button type="button" class="preset-pill" data-url="http://127.0.0.1:5000">:5000</button>
+          <button type="button" class="preset-pill" data-url="http://127.0.0.1:5001">:5001</button>
+          <button type="button" class="preset-pill" data-url="http://127.0.0.1:8080">:8080</button>
+          <button type="button" class="preset-pill" data-url="http://localhost:5000">localhost</button>
+        </div>
+      </div>
+
+      <!-- Live Ping Status Line -->
+      <div class="ping-line" id="ping-line">
+        <span class="ping-dot" id="ping-dot"></span>
+        <span class="ping-msg" id="ping-msg">Checking server...</span>
       </div>
 
       <div class="status-box" id="status-message"></div>
 
       <div class="actions">
-        <button type="button" class="btn-primary" id="save-btn">Save Settings</button>
-        <button type="button" class="btn-secondary" id="test-btn">Test Connection</button>
+        <button type="button" class="btn-primary" id="test-btn">Test Connection</button>
+        <button type="button" class="btn-secondary" id="save-btn" style="display: none;">Save Local URL</button>
         <button type="button" class="btn-secondary" id="reset-btn">Reset to Default</button>
       </div>
     </div>
 
-    <p class="footer-note">Changes take effect immediately for both popup and background workers.</p>
+    <p class="footer-note">Changes take effect immediately for extension actions and background sync.</p>
   </div>
 
   <script src="config.js"></script>
   <script src="options.js"></script>
 </body>
 </html>
-

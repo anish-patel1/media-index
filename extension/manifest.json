@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "media index — Media URL Analyzer",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Capture, analyze, and index media assets from any web page into your media index library with 1 click.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -18,6 +18,7 @@
     "alarms"
   ],
   "host_permissions": [
+    "https://media-index.onrender.com/*",
     "http://127.0.0.1:5000/*",
     "http://localhost:5000/*",
     "<all_urls>"

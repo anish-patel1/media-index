@@ -202,6 +202,16 @@ class TestURLDatabase(unittest.TestCase):
         file_node = tree["tree"][0]["children"][0]
         self.assertEqual(file_node["media_type"], "image")
 
+    def test_get_namespaces(self):
+        # Fresh db has at least 'default'
+        self.assertIn("default", self.db.get_namespaces())
+
+        # Adding URL to new namespace registers it
+        self.db.add_or_increment_url("https://example.com/photo.jpg", user_id="photographer_1")
+        namespaces = self.db.get_namespaces()
+        self.assertIn("default", namespaces)
+        self.assertIn("photographer_1", namespaces)
+
 
 if __name__ == "__main__":
     unittest.main()

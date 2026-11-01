@@ -330,6 +330,13 @@
                         </svg>
                         <span>Open</span>
                     </a>
+                    <button type="button" id="preview-discover-btn" class="preview-action-btn preview-discover-btn" title="Find related files in this collection">
+                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        <span>Related</span>
+                    </button>
                 </div>
             </div>
         </div>
@@ -448,6 +455,107 @@
                 <button type="button" id="confirm-import-btn" class="button button-primary">
                     <span id="confirm-import-text">Import All URLs</span>
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Related Media Discovery Modal -->
+    <div id="discovery-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="discovery-modal-title">
+        <div class="modal-card modal-card-wide discovery-modal-card">
+            <div class="modal-header">
+                <div class="modal-icon-wrap primary" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                </div>
+                <div style="flex: 1;">
+                    <h3 id="discovery-modal-title" class="modal-title">Find Related Media</h3>
+                    <p id="discovery-modal-subtitle" class="modal-subtitle">Discovering additional files in this collection</p>
+                </div>
+                <button type="button" id="close-discovery-btn" class="modal-close-btn" aria-label="Close modal">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Target Media Banner -->
+            <div class="discovery-hero-card" id="discovery-hero-card">
+                <div class="discovery-seed-info">
+                    <span class="discovery-label" id="discovery-target-label">Target:</span>
+                    <span id="discovery-seed-url" class="discovery-code">https://...</span>
+                </div>
+                <div class="discovery-meta-badges">
+                    <span id="discovery-status-badge" class="badge-status">Scanning...</span>
+                </div>
+            </div>
+
+            <!-- Scanning Animation & Status -->
+            <div id="discovery-loading-state" class="discovery-loading-state">
+                <div class="discovery-scan-visual">
+                    <div class="scan-ring ring-1"></div>
+                    <div class="scan-ring ring-2"></div>
+                    <div class="scan-core"></div>
+                </div>
+                <h4 id="discovery-loading-msg" class="discovery-loading-title">Searching for related files...</h4>
+                <p id="discovery-loading-sub" class="discovery-loading-sub">Scanning collection for available media</p>
+            </div>
+
+            <!-- Empty / No Items Found State -->
+            <div id="discovery-empty-state" class="discovery-empty-state" style="display: none;">
+                <div class="discovery-empty-icon-box">📁</div>
+                <h4 id="discovery-empty-title">No Related Media Found</h4>
+                <p id="discovery-empty-desc">No additional media files could be located in this collection.</p>
+            </div>
+
+            <!-- Discovered Results Container -->
+            <div id="discovery-results-container" class="discovery-results-container" style="display: none;">
+                <div class="discovery-controls-bar">
+                    <div class="discovery-summary">
+                        Found <strong id="discovery-verified-count">0</strong> related files (<span id="discovery-new-count">0</span> new)
+                    </div>
+                    <div class="discovery-quick-filters" role="group" aria-label="Selection filters">
+                        <button type="button" id="discovery-select-new-btn" class="discovery-filter-btn active" title="Select files not yet in your library">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                            </svg>
+                            <span>Select New</span>
+                            <span class="filter-count-badge" id="discovery-btn-new-count">0</span>
+                        </button>
+                        <button type="button" id="discovery-select-all-btn" class="discovery-filter-btn" title="Select all discovered files">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                            <span>Select All</span>
+                            <span class="filter-count-badge" id="discovery-btn-all-count">0</span>
+                        </button>
+                        <button type="button" id="discovery-clear-sel-btn" class="discovery-filter-btn discovery-filter-clear" title="Deselect all files">
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                            <span>Deselect All</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="discovery-grid" class="discovery-grid">
+                    <!-- Cards dynamically injected -->
+                </div>
+            </div>
+
+            <div class="modal-actions discovery-modal-footer">
+                <div class="discovery-footer-info" id="discovery-footer-info">
+                    <span id="discovery-footer-count">0 items selected</span>
+                </div>
+                <div class="discovery-footer-buttons">
+                    <button type="button" id="discovery-cancel-btn" class="button button-outline">Close</button>
+                    <button type="button" id="discovery-ingest-btn" class="button button-primary" disabled>
+                        <span id="discovery-ingest-text">Add to Library (0)</span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>

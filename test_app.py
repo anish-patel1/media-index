@@ -31,6 +31,117 @@ class TestAppRoutes(unittest.TestCase):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
 
+    def test_handshake_endpoint(self):
+        response = self.client.get("/api/handshake")
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(data["status"], "ok")
+        self.assertEqual(data["app"], "media-index")
+        self.assertEqual(data["version"], "2.0.0")
+        self.assertIn("default", data["active_namespaces"])
+
+    def test_discover_siblings_endpoint(self):
+        from unittest.mock import patch
+
+        # 1. Invalid payload
+        res_bad = self.client.post("/api/discover/siblings", json={})
+        self.assertEqual(res_bad.status_code, 400)
+
+        # 2. Standalone URL
+        res_standalone = self.client.post("/api/discover/siblings", json={"url": "https://i.redd.it/xyz123.jpg"})
+        self.assertEqual(res_standalone.status_code, 200)
+        self.assertEqual(res_standalone.get_json()["status"], "standalone")
+
+        # 3. Successful sequence discovery
+        mock_result = {
+            "status": "success",
+            "strategy": "numeric_sequence",
+            "seed_url": "https://example.com/art_02.jpg",
+            "pattern_description": "Numeric sequence",
+            "total_verified": 1,
+            "siblings": [
+                {
+                    "url": "https://example.com/art_01.jpg",
+                    "filename": "art_01.jpg",
+                    "extension": "jpg",
+                    "status_code": 200,
+                    "mime_type": "image/jpeg",
+                    "size_bytes": 50000
+                }
+            ]
+        }
+
+        with patch("app.sibling_engine.discover_siblings") as mock_discover:
+            mock_discover.return_value = mock_result
+            res = self.client.post("/api/discover/siblings", json={"url": "https://example.com/art_02.jpg"})
+            self.assertEqual(res.status_code, 200)
+            data = res.get_json()
+            self.assertEqual(data["status"], "success")
+            self.assertEqual(len(data["siblings"]), 1)
+            self.assertFalse(data["siblings"][0]["in_library"])
+
+    def test_discover_folder_siblings_endpoint(self):
+        from unittest.mock import patch
+
+        # 1. Invalid payload
+        res_bad = self.client.post("/api/discover/folder-siblings", json={})
+        self.assertEqual(res_bad.status_code, 400)
+
+        # 2. Standalone folder URLs
+        res_standalone = self.client.post("/api/discover/folder-siblings", json={
+            "folder_path": "/standalone/",
+            "domain": "i.redd.it",
+            "urls": ["https://i.redd.it/xyz1.jpg", "https://i.redd.it/xyz2.jpg"]
+        })
+        self.assertEqual(res_standalone.status_code, 200)
+        self.assertEqual(res_standalone.get_json()["status"], "standalone")
+
+        # 3. Successful folder sequence discovery
+        mock_folder_result = {
+            "status": "success",
+            "strategy": "folder_multi_seed",
+            "folder_path": "/gallery/",
+            "domain": "example.com",
+            "total_seed_files": 2,
+            "patterns_detected": ["'img_[N].jpg'"],
+            "pattern_description": "'img_[N].jpg'",
+            "total_verified": 2,
+            "siblings": [
+                {
+                    "url": "https://example.com/gallery/img_02.jpg",
+                    "filename": "img_02.jpg",
+                    "extension": "jpg",
+                    "status_code": 200,
+                    "mime_type": "image/jpeg",
+                    "size_bytes": 60000,
+                    "discovery_type": "gap_fill"
+                },
+                {
+                    "url": "https://example.com/gallery/img_04.jpg",
+                    "filename": "img_04.jpg",
+                    "extension": "jpg",
+                    "status_code": 200,
+                    "mime_type": "image/jpeg",
+                    "size_bytes": 62000,
+                    "discovery_type": "forward_sweep"
+                }
+            ]
+        }
+
+        with patch("app.sibling_engine.discover_folder_siblings") as mock_folder_discover:
+            mock_folder_discover.return_value = mock_folder_result
+            res = self.client.post("/api/discover/folder-siblings", json={
+                "folder_path": "/gallery/",
+                "domain": "example.com",
+                "urls": ["https://example.com/gallery/img_01.jpg", "https://example.com/gallery/img_03.jpg"]
+            })
+            self.assertEqual(res.status_code, 200)
+            data = res.get_json()
+            self.assertEqual(data["status"], "success")
+            self.assertEqual(data["total_verified"], 2)
+            self.assertEqual(len(data["siblings"]), 2)
+            self.assertFalse(data["siblings"][0]["in_library"])
+
     def test_add_valid_new_url(self):
         payload = {"url": "https://assets.example.com/2026/summer/banner.png"}
         response = self.client.post("/api/urls", json=payload)

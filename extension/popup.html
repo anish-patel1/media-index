@@ -10,85 +10,174 @@
 
 <body>
   <div class="popup-container">
-    <!-- Header -->
-    <header class="popup-header">
-      <div class="header-brand">
-        <img class="brand-icon" src="icons/icon-48.png" alt="media index">
-        <div class="brand-text">
-          <span class="brand-title">media<span>index</span></span>
-          <span class="brand-subtitle">Page Asset Ingestion</span>
+    <div class="view-slider" id="view-slider">
+
+      <!-- ========================================================= -->
+      <!-- VIEW 1: MEDIA SCANNER (Default)                           -->
+      <!-- ========================================================= -->
+      <section class="popup-view view-active" id="scanner-view">
+        <!-- Header -->
+        <header class="popup-header">
+          <div class="header-brand">
+            <img class="brand-icon" src="icons/icon-48.png" alt="media index">
+            <div class="brand-text">
+              <span class="brand-title">media<span>index</span></span>
+              <span class="brand-subtitle">Page Asset Ingestion</span>
+            </div>
+          </div>
+          <div class="header-status">
+            <span class="status-indicator offline" id="connection-status" title="Connecting to server...">
+              <span class="status-dot"></span>
+              <span class="status-label" id="status-label">Checking...</span>
+            </span>
+          </div>
+        </header>
+
+        <!-- Server Spin-Up Notification Banner -->
+        <div class="cold-start-banner" id="cold-start-banner" style="display: none;">
+          <div class="cold-start-pulse"></div>
+          <div class="cold-start-content">
+            <div class="cold-start-title">Connecting to server...</div>
+            <div class="cold-start-sub">Cloud server is starting up (may take a moment). Please wait.</div>
+          </div>
         </div>
-      </div>
-      <div class="header-status">
-        <span class="status-indicator offline" id="connection-status" title="Connecting to backend...">
-          <span class="status-dot"></span>
-          <span class="status-label" id="status-label">Checking...</span>
-        </span>
-      </div>
-    </header>
 
-    <!-- Page Info Banner -->
-    <section class="page-meta-banner">
-      <div class="page-title-row">
-        <span class="page-icon">🌐</span>
-        <span class="page-title" id="page-title" title="Current tab title">Loading page...</span>
-      </div>
-      <div class="page-stats-row">
-        <span class="stats-badge" id="stats-total">0 assets</span>
-        <span class="stats-sub" id="stats-breakdown">Scanning DOM...</span>
-      </div>
-    </section>
+        <!-- Page Info Banner -->
+        <section class="page-meta-banner">
+          <div class="page-title-row">
+            <span class="page-icon">🌐</span>
+            <span class="page-title" id="page-title" title="Current tab title">Loading page...</span>
+          </div>
+          <div class="page-stats-row">
+            <span class="stats-badge" id="stats-total">0 assets</span>
+            <span class="stats-sub" id="stats-breakdown">Scanning DOM...</span>
+          </div>
+        </section>
 
-    <!-- Filter & Selection Bar -->
-    <section class="selection-bar" id="selection-bar" style="display: none;">
-      <label class="select-all-label">
-        <input type="checkbox" id="select-all-checkbox" checked>
-        <span class="checkmark-text">Select All (<span id="selected-count">0</span>)</span>
-      </label>
-      <div class="filter-pills" id="filter-pills">
-        <button type="button" class="filter-btn active" data-filter="all">All</button>
-        <button type="button" class="filter-btn" data-filter="image">Images</button>
-        <button type="button" class="filter-btn" data-filter="video">Videos</button>
-        <button type="button" class="filter-btn" data-filter="gif">GIFs</button>
-      </div>
-    </section>
+        <!-- Filter & Selection Bar -->
+        <section class="selection-bar" id="selection-bar" style="display: none;">
+          <label class="select-all-label">
+            <input type="checkbox" id="select-all-checkbox" checked>
+            <span class="checkmark-text">Select All (<span id="selected-count">0</span>)</span>
+          </label>
+          <div class="filter-pills" id="filter-pills">
+            <button type="button" class="filter-btn active" data-filter="all">All</button>
+            <button type="button" class="filter-btn" data-filter="image">Images</button>
+            <button type="button" class="filter-btn" data-filter="video">Videos</button>
+            <button type="button" class="filter-btn" data-filter="gif">GIFs</button>
+          </div>
+        </section>
 
-    <!-- Main Content Area: Scrollable Asset Cards -->
-    <main class="assets-container" id="assets-container">
-      <div class="assets-list" id="assets-list">
-        <!-- Dynamically injected via popup.js -->
-      </div>
+        <!-- Main Content Area: Scrollable Asset Cards -->
+        <main class="assets-container" id="assets-container">
+          <div class="assets-list" id="assets-list">
+            <!-- Dynamically injected via popup.js -->
+          </div>
 
-      <div class="state-message" id="scanning-state">
-        <div class="spinner"></div>
-        <h4>Scanning Page Assets</h4>
-        <p>Inspecting images, videos, audio, and linked media files...</p>
-      </div>
+          <div class="state-message" id="scanning-state">
+            <div class="spinner"></div>
+            <h4>Scanning Page Assets</h4>
+            <p>Inspecting images, videos, audio, and linked media files...</p>
+          </div>
 
-      <div class="state-message" id="empty-state" style="display: none;">
-        <span class="empty-icon">🔍</span>
-        <h4>No Media Assets Found</h4>
-        <p>No direct images, videos, or GIFs were found on this active page.</p>
-      </div>
-    </main>
+          <div class="state-message" id="empty-state" style="display: none;">
+            <span class="empty-icon">🔍</span>
+            <h4>No Media Assets Found</h4>
+            <p>No direct images, videos, or GIFs were found on this active page.</p>
+          </div>
+        </main>
 
-    <!-- Action Bar -->
-    <footer class="popup-footer">
-      <button type="button" class="send-all-btn" id="send-btn" disabled>
-        <svg class="send-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" stroke-linejoin="round">
-          <line x1="22" y1="2" x2="11" y2="13"></line>
-          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-        </svg>
-        <span id="send-btn-text">Send selected to media index</span>
-      </button>
-      <div class="footer-links">
-        <a href="#" id="dashboard-link" target="_blank" rel="noopener noreferrer" class="dashboard-link">
-          Open media index library ↗
-        </a>
-        <a href="#" id="open-settings-btn" class="settings-link" title="media index settings">⚙️</a>
-      </div>
-    </footer>
+        <!-- Action Bar -->
+        <footer class="popup-footer">
+          <button type="button" class="send-all-btn" id="send-btn" disabled>
+            <svg class="send-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+            <span id="send-btn-text">Send selected to media index</span>
+          </button>
+          <div class="footer-links">
+            <a href="#" id="dashboard-link" target="_blank" rel="noopener noreferrer" class="dashboard-link">
+              Open media index library ↗
+            </a>
+            <button type="button" id="open-settings-btn" class="settings-trigger-btn" title="Open Settings">
+              ⚙️ Settings
+            </button>
+          </div>
+        </footer>
+      </section>
+
+      <!-- ========================================================= -->
+      <!-- VIEW 2: IN-POPUP SETTINGS                                 -->
+      <!-- ========================================================= -->
+      <section class="popup-view view-hidden-right" id="settings-view">
+        <!-- Settings Header -->
+        <header class="settings-header">
+          <button type="button" id="back-to-scanner-btn" class="btn-back">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            <span>Back</span>
+          </button>
+          <h2 class="settings-heading">Settings</h2>
+          <div class="settings-header-right">
+            <span class="settings-badge" id="settings-mini-badge">Offline</span>
+          </div>
+        </header>
+
+        <!-- Settings Scrollable Content -->
+        <main class="settings-content">
+
+          <!-- Developer Mode Card -->
+          <div class="settings-card dev-mode-card">
+            <div class="dev-mode-header">
+              <div class="dev-mode-title-group">
+                <span class="dev-mode-icon">🛠️</span>
+                <div>
+                  <h3 class="settings-card-title">Developer Mode</h3>
+                  <p class="settings-card-sub" id="env-status-text">Live Server (Default)</p>
+                </div>
+              </div>
+              <label class="switch-toggle" title="Toggle Developer Mode">
+                <input type="checkbox" id="dev-mode-toggle">
+                <span class="toggle-track"></span>
+              </label>
+            </div>
+
+            <!-- Collapsible Local Dev Configuration -->
+            <div class="dev-mode-container" id="dev-mode-container" style="display: none;">
+              <label for="settings-dev-url" class="dev-input-label">Local Server URL</label>
+              <input type="url" id="settings-dev-url" class="settings-input" placeholder="http://127.0.0.1:5000" spellcheck="false">
+              
+              <div class="quick-ports">
+                <span class="quick-ports-label">Presets:</span>
+                <button type="button" class="port-preset-btn" data-url="http://127.0.0.1:5000">:5000</button>
+                <button type="button" class="port-preset-btn" data-url="http://127.0.0.1:5001">:5001</button>
+                <button type="button" class="port-preset-btn" data-url="http://127.0.0.1:8080">:8080</button>
+                <button type="button" class="port-preset-btn" data-url="http://localhost:5000">localhost</button>
+              </div>
+            </div>
+
+            <!-- Endpoint Status Indicator -->
+            <div class="ping-status-bar" id="ping-status-bar">
+              <span class="ping-dot" id="ping-dot"></span>
+              <span class="ping-text" id="ping-text">Checking server...</span>
+            </div>
+          </div>
+
+          <div class="settings-status-box" id="settings-status-box" style="display: none;"></div>
+
+          <div class="settings-actions">
+            <button type="button" id="settings-test-btn" class="btn-primary">Test Connection</button>
+            <button type="button" id="settings-save-btn" class="btn-secondary" style="display: none;">Save Local URL</button>
+            <button type="button" id="settings-reset-btn" class="btn-tertiary">Reset to Default</button>
+          </div>
+        </main>
+      </section>
+
+    </div>
   </div>
 
   <script src="config.js"></script>
