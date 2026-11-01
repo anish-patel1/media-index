@@ -195,7 +195,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       await chrome.storage.local.set({
         devModeEnabled: enabled,
-        devApiUrl: currentDevUrl
+        devApiUrl: currentDevUrl,
+        apiUrl: enabled ? currentDevUrl : prodApi
       });
 
       showSettingsStatus(
@@ -267,7 +268,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       await chrome.storage.local.set({
         devModeEnabled: false,
-        devApiUrl: defaultDevApi
+        devApiUrl: defaultDevApi,
+        apiUrl: prodApi
       });
 
       showSettingsStatus('Reset to Live Server default.', 'info');
@@ -595,10 +597,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // -------------------------------------------------------------
+  // -------------------------------------------------------------
+  // -------------------------------------------------------------
   // 7. Send Selected to media index Backend
   // -------------------------------------------------------------
   if (sendBtn) {
-    sendBtn.addEventListener('click', async () => {
+    sendBtn.addEventListener("click", async () => {
       const urlsToSend = Array.from(selectedUrls);
       if (!urlsToSend.length) return;
 
@@ -606,37 +610,92 @@ document.addEventListener('DOMContentLoaded', async () => {
       sendBtnText.textContent = `Sending ${urlsToSend.length} assets...`;
 
       try {
-        const response = await chrome.runtime.sendMessage({
-          action: 'SUBMIT_URLS',
-          urls: urlsToSend
-        });
+        const stored = await chrome.storage.local.get(["devModeEnabled", "devApiUrl", "apiUrl", "userId"]);
+        let activeUrl = prodApi;
+        if (typeof CONFIG !== "undefined" && typeof CONFIG.resolveApiUrl === "function") {
+          activeUrl = CONFIG.resolveApiUrl(stored);
+        } else if (stored.devModeEnabled) {
+          activeUrl = stored.devApiUrl || defaultDevApi;
+        }
+        activeUrl = activeUrl.replace(/\/+$/, "");
+        const activeUserId = (stored.userId || "default").trim();
 
-        if (response && response.status === 'success') {
+        let response = null;
+
+        // 1. Primary path: Send via Background Service Worker
+        try {
+          response = await chrome.runtime.sendMessage({
+            action: "SUBMIT_URLS",
+            urls: urlsToSend
+          });
+        } catch (workerErr) {
+          console.warn("[media index] Worker message failed/unavailable, trying direct fetch:", workerErr);
+        }
+
+        // 2. Direct Fallback: Ingest directly if worker was unavailable or errored
+        if (!response || response.status !== "success") {
+          try {
+            const directRes = await fetch(`${activeUrl}/api/import`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-User-Id": activeUserId
+              },
+              body: JSON.stringify({ urls: urlsToSend }),
+              signal: AbortSignal.timeout(20000)
+            });
+
+            if (directRes.ok) {
+              const directData = await directRes.json();
+              response = {
+                status: "success",
+                imported: directData.imported ?? urlsToSend.length,
+                merged: directData.merged ?? 0
+              };
+            } else {
+              const errJson = await directRes.json().catch(() => ({}));
+              response = {
+                status: "error",
+                message: errJson.message || `HTTP ${directRes.status}`
+              };
+            }
+          } catch (directFetchErr) {
+            if (!response) {
+              response = {
+                status: "error",
+                message: directFetchErr.message || "Server request timed out"
+              };
+            }
+          }
+        }
+
+        if (response && response.status === "success") {
           const imported = response.imported ?? urlsToSend.length;
           sendBtnText.textContent = `✓ Ingested ${imported} Media Items!`;
-          sendBtn.style.background = '#10b981';
+          sendBtn.style.background = "#10b981";
 
           setTimeout(() => {
             sendBtnText.textContent = `Send ${selectedUrls.size} to media index`;
-            sendBtn.style.background = '';
+            sendBtn.style.background = "";
             sendBtn.disabled = false;
           }, 3000);
         } else {
-          sendBtnText.textContent = response.message || 'Submission failed';
-          sendBtn.style.background = '#ef4444';
+          const msg = (response && response.message) || "Submission failed";
+          sendBtnText.textContent = msg.length > 35 ? msg.slice(0, 32) + "..." : msg;
+          sendBtn.style.background = "#ef4444";
           setTimeout(() => {
             sendBtnText.textContent = `Send ${selectedUrls.size} to media index`;
-            sendBtn.style.background = '';
+            sendBtn.style.background = "";
             sendBtn.disabled = false;
           }, 3500);
         }
       } catch (err) {
-        console.error('Submission error:', err);
-        sendBtnText.textContent = 'Server communication error';
-        sendBtn.style.background = '#ef4444';
+        console.error("Submission error:", err);
+        sendBtnText.textContent = "Server communication error";
+        sendBtn.style.background = "#ef4444";
         setTimeout(() => {
           sendBtnText.textContent = `Send ${selectedUrls.size} to media index`;
-          sendBtn.style.background = '';
+          sendBtn.style.background = "";
           sendBtn.disabled = false;
         }, 3500);
       }

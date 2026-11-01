@@ -1,7 +1,7 @@
 /**
  * media index — Background Service Worker (Manifest V3)
  * Handles context menus, badge counts, async API communication,
- * Render cold-start wake-up recovery, and real-time state synchronization.
+ * cloud cold-start wake-up recovery, and real-time state synchronization.
  */
 
 try {
@@ -35,7 +35,7 @@ async function getConfig() {
   }
 
   return {
-    apiBase: apiBase.replace(/\/+$/, ''),
+    apiBase: (apiBase || PRODUCTION_API).replace(/\/+$/, ''),
     userId: (stored.userId || DEFAULT_USER_ID).trim(),
     devModeEnabled: !!stored.devModeEnabled
   };
@@ -136,10 +136,10 @@ async function broadcastSyncEvent(apiBase, userId, count, addedUrls = []) {
 // Helper: Ping with Cloud Cold-Start Wake-up Recovery
 // ---------------------------------------------------------------
 async function pingOrWakeupServer(apiBase, onWakingCallback = null) {
-  // Quick initial check (3.5s) using /api/tree
+  // Quick initial check (5s) using /api/tree
   try {
     const quickRes = await fetch(`${apiBase}/api/tree`, {
-      signal: AbortSignal.timeout(3500)
+      signal: AbortSignal.timeout(5000)
     });
     if (quickRes.ok) {
       return { online: true, wokeUp: false };
@@ -163,7 +163,7 @@ async function pingOrWakeupServer(apiBase, onWakingCallback = null) {
     await new Promise(res => setTimeout(res, intervalMs));
     try {
       const retryRes = await fetch(`${apiBase}/api/tree`, {
-        signal: AbortSignal.timeout(4000)
+        signal: AbortSignal.timeout(6000)
       });
       if (retryRes.ok) {
         return { online: true, wokeUp: true };
@@ -177,14 +177,15 @@ async function pingOrWakeupServer(apiBase, onWakingCallback = null) {
 // ---------------------------------------------------------------
 // Helper: POST a single URL to /api/urls
 // ---------------------------------------------------------------
-async function submitSingleUrl(url, apiBase, userId) {
+async function submitSingleUrl(url, apiBase, userId, timeoutMs = 8000) {
   const response = await fetch(`${apiBase}/api/urls`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-User-Id': userId
     },
-    body: JSON.stringify({ url })
+    body: JSON.stringify({ url }),
+    signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
@@ -196,14 +197,15 @@ async function submitSingleUrl(url, apiBase, userId) {
 // ---------------------------------------------------------------
 // Helper: POST a batch of URLs to /api/import
 // ---------------------------------------------------------------
-async function submitBatchUrls(urls, apiBase, userId) {
+async function submitBatchUrls(urls, apiBase, userId, timeoutMs = 25000) {
   const response = await fetch(`${apiBase}/api/import`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-User-Id': userId
     },
-    body: JSON.stringify({ urls })
+    body: JSON.stringify({ urls }),
+    signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
@@ -213,22 +215,31 @@ async function submitBatchUrls(urls, apiBase, userId) {
 }
 
 // ---------------------------------------------------------------
-// 1. Context Menu Setup on Install
+// 1. Context Menu Setup on Install & Startup
 // ---------------------------------------------------------------
-chrome.runtime.onInstalled.addListener(() => {
+function setupContextMenus() {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
       id: 'send_media_to_index',
       title: 'Send to media index',
       contexts: ['image', 'video', 'audio', 'link']
+    }, () => {
+      if (chrome.runtime.lastError) {
+        console.debug('[media index] Context menu creation note:', chrome.runtime.lastError);
+      }
     });
   });
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  setupContextMenus();
 
   // Initialize smart defaults
-  chrome.storage.local.get(['devModeEnabled', 'devApiUrl', 'userId'], (res) => {
+  chrome.storage.local.get(['devModeEnabled', 'devApiUrl', 'apiUrl', 'userId'], (res) => {
     const updates = {};
     if (res.devModeEnabled === undefined) updates.devModeEnabled = false;
     if (!res.devApiUrl) updates.devApiUrl = DEFAULT_DEV_API;
+    if (!res.apiUrl) updates.apiUrl = res.devModeEnabled ? (res.devApiUrl || DEFAULT_DEV_API) : PRODUCTION_API;
     if (!res.userId) updates.userId = DEFAULT_USER_ID;
     if (Object.keys(updates).length > 0) {
       chrome.storage.local.set(updates);
@@ -236,24 +247,45 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
+chrome.runtime.onStartup.addListener(() => {
+  setupContextMenus();
+});
+
 // ---------------------------------------------------------------
-// 2. Context Menu Click Handler (with Cold-Start Resilience)
+// 2. Context Menu Click Handler (Direct with Cold-Start Resilience)
 // ---------------------------------------------------------------
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== 'send_media_to_index') return;
 
   const targetUrl = info.srcUrl || info.linkUrl || info.pageUrl;
-  if (!targetUrl || targetUrl.startsWith('data:') || targetUrl.startsWith('blob:')) {
+  if (!targetUrl || targetUrl.startsWith('data:') || targetUrl.startsWith('blob:') || targetUrl.startsWith('javascript:')) {
     notify('Nothing to Send', 'Right-click directly on an image, video, or media link.');
     return;
   }
 
+  let targetApi = PRODUCTION_API;
+  let targetUser = DEFAULT_USER_ID;
+
   try {
-    const { apiBase, userId } = await getConfig();
+    const config = await getConfig();
+    targetApi = config.apiBase;
+    targetUser = config.userId;
 
     if (tab?.id) await flashBadge(tab.id, '...', '#6558dd', 0);
 
-    const pingStatus = await pingOrWakeupServer(apiBase, (isCloud) => {
+    let data = null;
+    let wasWokenUp = false;
+
+    // Direct attempt first for instant response when server is awake (<=6s)
+    try {
+      data = await submitSingleUrl(targetUrl, targetApi, targetUser, 6000);
+    } catch (directErr) {
+      console.log('[media index] Direct submission attempt paused, running connection recovery:', directErr.message);
+
+      const isCloud = (typeof CONFIG !== 'undefined' && typeof CONFIG.isCloudHost === 'function')
+        ? CONFIG.isCloudHost(targetApi)
+        : targetApi.includes('onrender.com');
+
       if (tab?.id) flashBadge(tab.id, '⏳', '#f59e0b', 0);
       if (isCloud) {
         notify(
@@ -261,22 +293,18 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           'Cloud server is starting up. Ingestion queued and will save automatically.'
         );
       }
-    });
 
-    if (!pingStatus.online) {
-      notify(
-        'Server Unreachable',
-        `Could not reach media index at ${apiBase} after 60s. Please check server status.`
-      );
-      if (tab?.id) await flashBadge(tab.id, '!', '#ef4444', 4000);
-      return;
+      const pingStatus = await pingOrWakeupServer(targetApi);
+      if (!pingStatus.online) {
+        throw new Error(`Could not reach media index at ${targetApi}. Please check server status.`);
+      }
+
+      wasWokenUp = true;
+      data = await submitSingleUrl(targetUrl, targetApi, targetUser, 10000);
     }
 
-    // Server is ready, submit the URL
-    const data = await submitSingleUrl(targetUrl, apiBase, userId);
-
-    const isDup = data.is_duplicate || false;
-    const label = isDup ? 'Already in Library' : (pingStatus.wokeUp ? 'Server Awake & Saved!' : 'Saved!');
+    const isDup = data?.is_duplicate || false;
+    const label = isDup ? 'Already in Library' : (wasWokenUp ? 'Server Awake & Saved!' : 'Saved!');
     const urlShort = targetUrl.length > 60 ? targetUrl.slice(0, 57) + '...' : targetUrl;
 
     notify(label, urlShort);
@@ -286,7 +314,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
 
     // Real-Time Sync notification to active dashboard tabs
-    await broadcastSyncEvent(apiBase, userId, 1, [targetUrl]);
+    await broadcastSyncEvent(targetApi, targetUser, 1, [targetUrl]);
 
   } catch (err) {
     console.error('[media index] Context menu submission failed:', err);
@@ -330,8 +358,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Batch URL submission from popup
   if (message.action === 'SUBMIT_URLS') {
     (async () => {
+      let targetApi = PRODUCTION_API;
+      let targetUser = DEFAULT_USER_ID;
+
       try {
-        const { apiBase, userId } = await getConfig();
+        const config = await getConfig();
+        targetApi = config.apiBase;
+        targetUser = config.userId;
         const urls = (message.urls || []).filter(Boolean);
 
         if (!urls.length) {
@@ -339,11 +372,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
 
-        const data = await submitBatchUrls(urls, apiBase, userId);
+        const data = await submitBatchUrls(urls, targetApi, targetUser);
 
-        if (data.status === 'success') {
+        if (data && data.status === 'success') {
           // Trigger real-time sync across dashboard tabs
-          broadcastSyncEvent(apiBase, userId, urls.length, urls);
+          broadcastSyncEvent(targetApi, targetUser, urls.length, urls);
 
           sendResponse({
             status: 'success',
@@ -354,14 +387,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } else {
           sendResponse({
             status: 'error',
-            message: data.message || 'Server returned non-success status.'
+            message: (data && data.message) || 'Server returned non-success status.'
           });
         }
       } catch (err) {
         console.error('[media index] SUBMIT_URLS failed:', err);
         sendResponse({
           status: 'error',
-          message: `Could not connect to media index at ${apiBase}: ${err.message}`
+          message: `Could not connect to media index at ${targetApi}: ${err.message}`
         });
       }
     })();
@@ -379,7 +412,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         try {
           const quickRes = await fetch(`${apiBase}/api/tree`, {
-            signal: AbortSignal.timeout(3500)
+            signal: AbortSignal.timeout(4500)
           });
           if (quickRes.ok) {
             sendResponse({

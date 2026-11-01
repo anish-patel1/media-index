@@ -110,7 +110,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       await chrome.storage.local.set({
         devModeEnabled: enabled,
-        devApiUrl: currentDevUrl
+        devApiUrl: currentDevUrl,
+        apiUrl: enabled ? currentDevUrl : prodApi
       });
 
       showStatus(
@@ -131,7 +132,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       await chrome.storage.local.set({
         devModeEnabled: true,
-        devApiUrl: targetUrl
+        devApiUrl: targetUrl,
+        apiUrl: targetUrl
       });
 
       if (devToggle) devToggle.checked = true;
@@ -147,7 +149,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     saveBtn.addEventListener('click', async () => {
       const clean = normalizeUrl(devApiUrlInput.value, defaultDevApi);
       devApiUrlInput.value = clean;
-      await chrome.storage.local.set({ devApiUrl: clean });
+      await chrome.storage.local.set({ devApiUrl: clean, apiUrl: clean });
       if (envDesc) envDesc.textContent = `Local Server (${clean})`;
       showStatus(`✓ Local server URL saved: ${clean}`, 'success', 2500);
       testServerConnection();
@@ -178,7 +180,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       await chrome.storage.local.set({
         devModeEnabled: false,
-        devApiUrl: defaultDevApi
+        devApiUrl: defaultDevApi,
+        apiUrl: prodApi
       });
 
       showStatus('Reset to Live Server default.', 'info');
