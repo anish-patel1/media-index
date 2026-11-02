@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — Media Index</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-bright: #f0f6fc;
+      --text-muted: #8b949e;
+      --primary: #58a6ff;
+      --accent: #238636;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 40px 20px;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 40px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    }
+
+    .header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 24px;
+      margin-bottom: 28px;
+    }
+
+    .header h1 {
+      color: var(--text-bright);
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .header p {
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    h2 {
+      color: var(--text-bright);
+      font-size: 18px;
+      margin-top: 28px;
+      margin-bottom: 12px;
+    }
+
+    p, ul {
+      margin-bottom: 16px;
+      font-size: 15px;
+    }
+
+    ul {
+      padding-left: 24px;
+    }
+
+    li {
+      margin-bottom: 8px;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .back-link {
+      display: inline-block;
+      margin-bottom: 24px;
+      font-size: 14px;
+    }
+
+    .highlight-box {
+      background: rgba(88, 166, 255, 0.08);
+      border-left: 4px solid var(--primary);
+      padding: 14px 18px;
+      border-radius: 4px;
+      margin-bottom: 24px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a href="/" class="back-link">&larr; Back to Media Index</a>
+
+    <div class="header">
+      <h1>Privacy Policy</h1>
+      <p>Last updated: November 2, 2026</p>
+    </div>
+
+    <div class="highlight-box">
+      <strong>Summary:</strong> Media Index and the Media Index Browser Extension are designed to respect your privacy. We do not sell your data, track your browsing history across the web, or collect personally identifiable information.
+    </div>
+
+    <h2>1. Overview</h2>
+    <p>
+      This Privacy Policy applies to the <strong>Media Index</strong> web application (hosted at <a href="https://media-index.onrender.com">https://media-index.onrender.com</a>) and the <strong>Media Index — Media URL Analyzer</strong> browser extension companion.
+    </p>
+
+    <h2>2. What Data We Collect</h2>
+    <p>We only process data directly required to provide the core indexing functionality:</p>
+    <ul>
+      <li><strong>Selected Media URLs:</strong> Direct links to images, videos, audio streams, or documents that you explicitly choose to index or import.</li>
+      <li><strong>Page Context:</strong> The source webpage title and URL when capturing an asset via the context menu or scanner, used solely to attribute where the media asset originated.</li>
+      <li><strong>Local Preferences:</strong> Settings such as preferred backend API URL, developer mode toggle, and active user namespace, stored locally on your device via <code>chrome.storage</code>.</li>
+    </ul>
+
+    <h2>3. Data We Do NOT Collect</h2>
+    <ul>
+      <li>We do <strong>not</strong> track, monitor, or record your web browsing history.</li>
+      <li>We do <strong>not</strong> collect personal identifying information (such as your name, home address, email, phone number, or passwords).</li>
+      <li>We do <strong>not</strong> collect financial, biometric, or location data.</li>
+      <li>We do <strong>not</strong> use third-party tracking scripts, analytics cookies, or advertising beacons.</li>
+    </ul>
+
+    <h2>4. How Your Data Is Stored & Used</h2>
+    <p>
+      Media URLs and asset metadata are stored in your configured Media Index instance (either your cloud deployment or your self-hosted local instance) so you can browse, categorize, and query your indexed media assets.
+    </p>
+
+    <h2>5. Data Sharing & Third Parties</h2>
+    <p>
+      We do <strong>not</strong> sell, rent, monetize, or share your data with data brokers, advertisers, or any third parties. All network communications are exclusively between your browser extension and your designated Media Index backend server.
+    </p>
+
+    <h2>6. User Controls and Data Deletion</h2>
+    <p>
+      You have full control over your indexed media data. You can inspect, modify, or permanently delete any saved URL or collection at any time through the Media Index web dashboard interface.
+    </p>
+
+    <h2>7. Contact</h2>
+    <p>
+      If you have questions about this privacy policy or our privacy practices, please contact us via our project repository or website at <a href="https://media-index.onrender.com">https://media-index.onrender.com</a>.
+    </p>
+  </div>
+</body>
+</html>
+

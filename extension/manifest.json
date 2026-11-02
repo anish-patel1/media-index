@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "media index — Media URL Analyzer",
-  "version": "1.1.0",
+  "name": "Media Index — Media URL Analyzer",
+  "version": "1.0.0",
   "description": "Capture, analyze, and index media assets from any web page into your media index library with 1 click.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -30,7 +30,7 @@
       "48": "icons/icon-48.png",
       "128": "icons/icon-128.png"
     },
-    "default_title": "media index companion"
+    "default_title": "Media Index Companion"
   },
   "options_ui": {
     "page": "options.html",

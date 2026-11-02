@@ -78,6 +78,12 @@ def index():
     """Renders the main web interface."""
     return render_template("index.html")
 
+@app.route("/privacy")
+def privacy_policy():
+    """Renders the privacy policy page."""
+    return render_template("privacy.html")
+
+
 
 @app.route("/favicon.ico")
 def favicon():
