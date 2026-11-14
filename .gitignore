@@ -223,3 +223,7 @@ __marimo__/
 url_database.json
 *.tmp
 static/thumb_cache/
+
+# Release and archive packages
+*.zip
+
