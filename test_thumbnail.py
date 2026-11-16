@@ -81,18 +81,21 @@ class TestThumbnailManager(unittest.TestCase):
         remaining = [f for f in os.listdir(self.test_dir) if f.endswith(".webp")]
         self.assertEqual(len(remaining), 2)
 
-    def test_video_thumbnail_disabled_by_default(self):
+    def test_video_thumbnail_disabled_when_flag_false(self):
         with patch.dict(os.environ, {"ENABLE_VIDEO_THUMBNAILS": "false"}):
             path, err = get_or_create_thumbnail("https://example.com/clip.mp4", size=150)
             self.assertIsNone(path)
             self.assertIn("disabled", err)
 
-    def test_video_thumbnail_missing_ffmpeg(self):
+    def test_video_thumbnail_fallback_placeholder_without_ffmpeg(self):
         with patch.dict(os.environ, {"ENABLE_VIDEO_THUMBNAILS": "true"}):
             with patch("thumbnail_manager.is_ffmpeg_available", return_value=False):
                 path, err = get_or_create_thumbnail("https://example.com/clip.mp4", size=150)
-                self.assertIsNone(path)
-                self.assertIn("ffmpeg", err)
+                self.assertIsNone(err)
+                self.assertIsNotNone(path)
+                self.assertTrue(os.path.isfile(path))
+                with Image.open(path) as thumb:
+                    self.assertEqual(thumb.format, "WEBP")
 
     def test_video_thumbnail_success(self):
         # Create a mock video frame in memory

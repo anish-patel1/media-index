@@ -13,7 +13,7 @@ import subprocess
 import urllib.parse
 from typing import Optional, Tuple
 import httpx
-from PIL import Image
+from PIL import Image, ImageDraw
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +25,8 @@ DEFAULT_THUMB_SIZE = 150
 MAX_THUMB_SIZE = 600
 MIN_THUMB_SIZE = 32
 
-ENABLE_VIDEO_THUMBNAILS = os.environ.get("ENABLE_VIDEO_THUMBNAILS", "false").lower() in ("true", "1", "yes")
-VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".m4v", ".mkv", ".avi"}
+ENABLE_VIDEO_THUMBNAILS = os.environ.get("ENABLE_VIDEO_THUMBNAILS", "true").lower() in ("true", "1", "yes")
+VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".m4v", ".mkv", ".avi", ".ogv"}
 
 # Ensure cache directory exists
 os.makedirs(THUMB_CACHE_DIR, exist_ok=True)
@@ -37,16 +37,55 @@ def is_ffmpeg_available() -> bool:
     return shutil.which("ffmpeg") is not None
 
 
+def generate_video_placeholder(size: int = DEFAULT_THUMB_SIZE, ext_label: str = "VIDEO") -> bytes:
+    """Generates an aesthetic WebP placeholder image with a play triangle for videos
+
+    when ffmpeg is unavailable or frame extraction fails.
+    """
+    clamped_size = max(MIN_THUMB_SIZE, min(MAX_THUMB_SIZE, size))
+    # Create dark modern slate-purple card
+    img = Image.new("RGBA", (clamped_size, clamped_size), (24, 22, 45, 255))
+    draw = ImageDraw.Draw(img)
+
+    center_x = clamped_size // 2
+    center_y = clamped_size // 2
+    radius = max(14, clamped_size // 4)
+
+    # Draw circular badge
+    draw.ellipse(
+        [center_x - radius, center_y - radius, center_x + radius, center_y + radius],
+        fill=(99, 102, 241, 230),  # Indigo accent
+        outline=(129, 140, 248, 255),
+        width=2,
+    )
+
+    # Draw play triangle inside circle
+    tri_size = max(6, radius // 2)
+    p1 = (center_x - tri_size // 2, center_y - tri_size)
+    p2 = (center_x - tri_size // 2, center_y + tri_size)
+    p3 = (center_x + tri_size, center_y)
+    draw.polygon([p1, p2, p3], fill=(255, 255, 255, 255))
+
+    out = io.BytesIO()
+    img.convert("RGB").save(out, format="WEBP", quality=80)
+    return out.getvalue()
+
+
 def extract_video_frame(url: str, timeout: float = 8.0) -> Optional[bytes]:
-    """Extracts first frame bytes (PNG format) from video URL using ffmpeg."""
+    """Extracts a representative frame (PNG format) from a video URL using ffmpeg.
+
+    Puts -ss before -i to perform fast input seeking without full download.
+    """
     if not is_ffmpeg_available():
         return None
     try:
+        # Fast input seek (-ss before -i) avoids downloading full video payload
         cmd = [
             "ffmpeg",
-            "-ss", "00:00:01",
+            "-ss", "00:00:02",
             "-i", url,
             "-vframes", "1",
+            "-vf", "scale='min(480,iw)':-1",
             "-f", "image2pipe",
             "-vcodec", "png",
             "-"
@@ -54,6 +93,21 @@ def extract_video_frame(url: str, timeout: float = 8.0) -> Optional[bytes]:
         res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=timeout)
         if res.returncode == 0 and res.stdout:
             return res.stdout
+
+        # Fallback to 00:00:00 if 2-second timestamp exceeds short clip duration
+        cmd_fallback = [
+            "ffmpeg",
+            "-ss", "00:00:00",
+            "-i", url,
+            "-vframes", "1",
+            "-vf", "scale='min(480,iw)':-1",
+            "-f", "image2pipe",
+            "-vcodec", "png",
+            "-"
+        ]
+        res_fb = subprocess.run(cmd_fallback, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=timeout)
+        if res_fb.returncode == 0 and res_fb.stdout:
+            return res_fb.stdout
     except Exception as e:
         logger.debug("Failed extracting video frame for %s: %s", url, e)
     return None
@@ -138,15 +192,17 @@ def get_or_create_thumbnail(
     image_bytes = None
 
     if is_video:
-        enable_video = os.environ.get("ENABLE_VIDEO_THUMBNAILS", "false").lower() in ("true", "1", "yes")
+        enable_video = os.environ.get("ENABLE_VIDEO_THUMBNAILS", "true").lower() in ("true", "1", "yes")
         if not enable_video:
             return None, "Video thumbnails disabled (set ENABLE_VIDEO_THUMBNAILS=true to enable)"
-        if not is_ffmpeg_available():
-            return None, "ffmpeg binary not found in system PATH"
 
-        image_bytes = extract_video_frame(clean_url)
+        # Attempt frame extraction if ffmpeg is available
+        if is_ffmpeg_available():
+            image_bytes = extract_video_frame(clean_url)
+
+        # Graceful fallback: generate an aesthetic placeholder instead of failing with 404
         if not image_bytes:
-            return None, "Failed extracting video frame via ffmpeg"
+            image_bytes = generate_video_placeholder(size=clamped_size, ext_label=ext.lstrip(".").upper())
     else:
         # Fetch source image
         headers = {

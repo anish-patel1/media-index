@@ -119,6 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Floating Hover Preview Card Elements
     const floatingPreviewCard = document.getElementById('floating-preview-card');
     const previewCardImg = document.getElementById('preview-card-img');
+    const previewCardVideo = document.getElementById('preview-card-video');
     const previewCardFallback = document.getElementById('preview-card-fallback');
     const previewThumbSkeleton = document.querySelector('.preview-thumb-skeleton');
     const previewDimBadge = document.getElementById('preview-dim-badge');
@@ -137,6 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Toast Container
     const toastContainer = document.getElementById('toast-container');
+
 
     // State Variables
     let rawTreeData = [];
@@ -537,12 +539,6 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <a href="${escapeHtml(node.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(node.url)}">
                                     <strong>${highlightText(node.name, query)}</strong>
                                 </a>
-                                <button type="button" class="row-preview-trigger" data-url="${escapeHtml(node.url)}" title="Quick preview" aria-label="Preview image">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                        <circle cx="12" cy="12" r="3"></circle>
-                                    </svg>
-                                </button>
                                 <button type="button" class="tree-magic-btn" data-url="${escapeHtml(node.url)}" title="Discover Sibling Files (✨ Magic Scanner)" aria-label="Discover Sibling Files">✨</button>
                             </div>
                             <div class="file-sub-row">
@@ -679,7 +675,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const mType = file.media_type || 'image';
         const meta = file.metadata || {};
         const timeText = formatTimeAgo(file.last_updated || file.first_added);
-        const isImage = mType === 'image' || mType === 'gif' || ['JPG', 'JPEG', 'PNG', 'WEBP', 'GIF', 'AVIF', 'SVG'].includes(ext);
+        const isVideo = mType === 'video' || ['MP4', 'WEBM', 'MOV', 'M4V', 'MKV', 'AVI', 'OGV'].includes(ext);
+        const isImage = !isVideo && (mType === 'image' || mType === 'gif' || ['JPG', 'JPEG', 'PNG', 'WEBP', 'GIF', 'AVIF', 'SVG', 'ICO', 'BMP'].includes(ext));
         const thumbUrl = `/api/thumbnail?url=${encodeURIComponent(file.url)}&size=320`;
 
         let thumbContent = '';
@@ -692,11 +689,27 @@ document.addEventListener('DOMContentLoaded', () => {
                      alt="${escapeHtml(file.name)}" 
                      loading="lazy">
             `;
-        } else if (mType === 'video' || ['MP4', 'WEBM', 'MOV', 'M4V'].includes(ext)) {
+        } else if (isVideo) {
             thumbContent = `
-                <div class="media-card-fallback">
-                    ${SVG_ICONS.video}
-                    <span>${escapeHtml(ext)} Video</span>
+                <div class="thumb-skeleton" aria-hidden="true"></div>
+                <video class="media-card-video-thumb lazy-video"
+                       data-src="${escapeHtml(file.url)}"
+                       data-thumb="${escapeHtml(thumbUrl)}"
+                       preload="metadata"
+                       muted
+                       playsinline
+                       crossorigin="anonymous"
+                       title="${escapeHtml(file.name)}">
+                </video>
+                <div class="media-card-video-badge" title="Hover video to play preview">
+                    <span class="video-badge-icon">
+                        <svg class="play-icon" viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="m9 7 8 5-8 5V7Z"/></svg>
+                        <span class="playing-bars">
+                            <i></i><i></i><i></i>
+                        </span>
+                    </span>
+                    <span class="video-badge-ext">${escapeHtml(ext)}</span>
+                    <span class="video-badge-tip">Hover to play</span>
                 </div>
             `;
         } else {
@@ -993,6 +1006,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const height = item.height || (meta.dimensions && meta.dimensions[1]);
             const sizeBytes = item.size_bytes ?? item.content_length ?? meta.size_bytes ?? meta.content_length;
 
+            const isVideoItem = mType === 'video' || ['MP4', 'WEBM', 'MOV', 'M4V', 'MKV', 'AVI', 'OGV'].includes(ext);
             let metaBadgesHtml = '';
             if (width && height) {
                 metaBadgesHtml += `<span class="meta-badge dim-badge">${width}×${height}</span>`;
@@ -1037,10 +1051,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     </button>
                 `;
 
+            const thumbElementHtml = isVideoItem
+                ? `<video class="cluster-video-thumb lazy-video" data-src="${escapeHtml(item.url || '')}" data-thumb="${escapeHtml(thumbUrl)}" preload="metadata" muted playsinline></video>`
+                : `<img class="lazy-thumb" data-src="${escapeHtml(thumbUrl)}" data-ext="${escapeHtml(ext)}" alt="${escapeHtml(rawName)}" loading="lazy">`;
+
             return `
                 <div class="cluster-item-row ${isCanonical ? 'is-canonical' : ''}" data-url="${escapeHtml(item.url || '')}">
                     <div class="cluster-item-thumb">
-                        <img class="lazy-thumb" data-src="${escapeHtml(thumbUrl)}" data-ext="${escapeHtml(ext)}" alt="${escapeHtml(rawName)}" loading="lazy">
+                        ${thumbElementHtml}
                     </div>
                     <div class="cluster-item-info">
                         <div class="cluster-item-title-row">
@@ -1247,8 +1265,9 @@ document.addEventListener('DOMContentLoaded', () => {
             gridObserver = null;
         }
 
-        const lazyImages = treeContainer ? treeContainer.querySelectorAll('img.lazy-thumb') : [];
-        if (!lazyImages || !lazyImages.length) return;
+        const lazyImages = treeContainer ? Array.from(treeContainer.querySelectorAll('img.lazy-thumb')) : [];
+        const lazyVideos = treeContainer ? Array.from(treeContainer.querySelectorAll('video.lazy-video')) : [];
+        if (!lazyImages.length && !lazyVideos.length) return;
 
         function loadImg(img) {
             const src = img.getAttribute('data-src');
@@ -1278,21 +1297,98 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         }
 
+        function loadVid(vid) {
+            const src = vid.getAttribute('data-src');
+            if (!src || vid.src) return;
+
+            vid.src = src;
+
+            vid.onloadeddata = () => {
+                vid.classList.add('thumb-loaded');
+                const skeleton = vid.previousElementSibling;
+                if (skeleton && skeleton.classList.contains('thumb-skeleton')) {
+                    skeleton.style.display = 'none';
+                }
+                // Seek to representative frame (2s)
+                try {
+                    vid.currentTime = 2;
+                } catch {}
+            };
+
+            vid.onerror = () => {
+                const thumb = vid.getAttribute('data-thumb');
+                const wrap = vid.closest('.media-card-thumb-wrap');
+                const card = vid.closest('.media-card');
+                const ext = (card && card.querySelector('.type-chip') ? card.querySelector('.type-chip').textContent : 'VIDEO').toUpperCase();
+                
+                // Fallback to backend thumbnail (which generates aesthetic placeholder if ffmpeg missing)
+                if (thumb && !vid.dataset.fellBack) {
+                    vid.dataset.fellBack = 'true';
+                    const fallbackImg = document.createElement('img');
+                    fallbackImg.className = 'media-card-thumb thumb-loaded';
+                    fallbackImg.src = thumb;
+                    fallbackImg.alt = 'Video Preview';
+                    vid.parentNode.replaceChild(fallbackImg, vid);
+                    const skeleton = wrap ? wrap.querySelector('.thumb-skeleton') : null;
+                    if (skeleton) skeleton.style.display = 'none';
+                } else if (wrap) {
+                    wrap.innerHTML = `
+                        <div class="media-card-fallback">
+                            ${SVG_ICONS.video}
+                            <span>${escapeHtml(ext)} Video</span>
+                        </div>
+                    `;
+                }
+            };
+
+            // Interactive hover scrubbing for video preview cards
+            const parentCard = vid.closest('.media-card');
+            if (parentCard && !parentCard.dataset.videoBound) {
+                parentCard.dataset.videoBound = 'true';
+                parentCard.addEventListener('mouseenter', () => {
+                    if (vid.readyState >= 2) {
+                        vid.play().then(() => {
+                            parentCard.classList.add('video-is-playing');
+                        }).catch(() => {});
+                    } else {
+                        // If metadata/frame still buffering, mark ready to play as soon as data arrives
+                        const onReady = () => {
+                            vid.play().then(() => parentCard.classList.add('video-is-playing')).catch(() => {});
+                            vid.removeEventListener('loadeddata', onReady);
+                        };
+                        vid.addEventListener('loadeddata', onReady);
+                    }
+                });
+                parentCard.addEventListener('mouseleave', () => {
+                    vid.pause();
+                    parentCard.classList.remove('video-is-playing');
+                    try { vid.currentTime = 2; } catch {}
+                });
+            }
+        }
+
+        const allLazy = [...lazyImages, ...lazyVideos];
+
         if (typeof IntersectionObserver !== 'undefined') {
             gridObserver = new IntersectionObserver((entries, observer) => {
                 entries.forEach(entry => {
                     if (entry.isIntersecting) {
-                        const img = entry.target;
-                        loadImg(img);
-                        observer.unobserve(img);
+                        const target = entry.target;
+                        if (target.tagName.toLowerCase() === 'img') {
+                            loadImg(target);
+                        } else if (target.tagName.toLowerCase() === 'video') {
+                            loadVid(target);
+                        }
+                        observer.unobserve(target);
                     }
                 });
             }, { rootMargin: '200px 0px' });
 
-            lazyImages.forEach(img => gridObserver.observe(img));
+            allLazy.forEach(el => gridObserver.observe(el));
         } else {
             // Direct load fallback
             lazyImages.forEach(loadImg);
+            lazyVideos.forEach(loadVid);
         }
     }
 
@@ -1321,6 +1417,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function hideHoverPreview() {
         clearTimeout(hoverShowTimer);
         clearTimeout(hoverHideTimer);
+        if (previewCardVideo) {
+            previewCardVideo.pause();
+            previewCardVideo.removeAttribute('src');
+            previewCardVideo.load();
+            previewCardVideo.style.display = 'none';
+        }
         if (floatingPreviewCard) {
             floatingPreviewCard.classList.remove('active');
             floatingPreviewCard.setAttribute('aria-hidden', 'true');
@@ -1390,7 +1492,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Media Thumbnail Preview
-        if (isImg) {
+        const isVid = mType === 'video' || ['MP4', 'WEBM', 'MOV', 'M4V', 'MKV', 'AVI', 'OGV'].includes(ext);
+        if (previewCardVideo) {
+            previewCardVideo.pause();
+            previewCardVideo.removeAttribute('src');
+            previewCardVideo.load();
+            previewCardVideo.style.display = 'none';
+        }
+
+        if (isImg && !isVid) {
             if (previewCardFallback) previewCardFallback.style.display = 'none';
             if (previewThumbSkeleton) previewThumbSkeleton.style.display = 'block';
             if (previewCardImg) {
@@ -1411,17 +1521,35 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 };
             }
+        } else if (isVid) {
+            if (previewCardImg) previewCardImg.style.display = 'none';
+            if (previewCardFallback) previewCardFallback.style.display = 'none';
+            if (previewThumbSkeleton) previewThumbSkeleton.style.display = 'block';
+            if (previewCardVideo) {
+                previewCardVideo.style.display = 'block';
+                previewCardVideo.classList.remove('loaded');
+                previewCardVideo.src = node.url;
+                previewCardVideo.onloadeddata = () => {
+                    previewCardVideo.classList.add('loaded');
+                    if (previewThumbSkeleton) previewThumbSkeleton.style.display = 'none';
+                    try { previewCardVideo.currentTime = 2; } catch {}
+                };
+                previewCardVideo.onerror = () => {
+                    previewCardVideo.style.display = 'none';
+                    if (previewThumbSkeleton) previewThumbSkeleton.style.display = 'none';
+                    if (previewCardFallback) {
+                        previewCardFallback.style.display = 'flex';
+                        previewCardFallback.innerHTML = `${SVG_ICONS.video}<span>${escapeHtml(ext)} Video</span>`;
+                    }
+                };
+            }
         } else {
             if (previewCardImg) previewCardImg.style.display = 'none';
             if (previewThumbSkeleton) previewThumbSkeleton.style.display = 'none';
             if (previewDimBadge) previewDimBadge.style.display = 'none';
             if (previewCardFallback) {
                 previewCardFallback.style.display = 'flex';
-                if (mType === 'video' || ['MP4', 'WEBM', 'MOV', 'M4V'].includes(ext)) {
-                    previewCardFallback.innerHTML = `${SVG_ICONS.video}<span>${escapeHtml(ext)} Video</span>`;
-                } else {
-                    previewCardFallback.innerHTML = `${SVG_ICONS.file}<span>${escapeHtml(ext)}</span>`;
-                }
+                previewCardFallback.innerHTML = `${SVG_ICONS.file}<span>${escapeHtml(ext)}</span>`;
             }
         }
 
@@ -1464,6 +1592,7 @@ document.addEventListener('DOMContentLoaded', () => {
         floatingPreviewCard.setAttribute('aria-hidden', 'false');
     }
 
+    // -------------------------------------------------------------
     // View Switching and Dispatch
     function setViewMode(mode) {
         if (mode !== 'tree' && mode !== 'grid' && mode !== 'clusters') mode = 'tree';
@@ -1879,7 +2008,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (treeContainer) {
         treeContainer.addEventListener('mouseover', (e) => {
-            const previewTrigger = e.target.closest('.row-preview-trigger, .file-icon');
+            const fileIconTrigger = e.target.closest('.file-icon');
             const rowOrCard = e.target.closest('.file-row, .media-card');
             if (!rowOrCard) return;
 
@@ -1888,12 +2017,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const node = fileLookupMap.get(url);
             if (!node) return;
 
-            if (previewTrigger) {
-                // User deliberately hovered over preview eye button or icon: fast reveal
-                queueHoverPreview(node, previewTrigger, 100);
+            if (fileIconTrigger) {
+                // Hovered directly over file icon: prompt fast reveal
+                queueHoverPreview(node, fileIconTrigger, 120);
             } else if (currentViewMode === 'grid') {
-                // Grid view card hover
-                queueHoverPreview(node, rowOrCard, 220);
+                // In Grid view, do not show hover popover if hovering the card's thumbnail/video
+                // so inline scrubbing & playback are unobstructed. Only preview when hovering title/meta or eye trigger.
+                const isMediaThumb = e.target.closest('.media-card-thumb-wrap');
+                if (!isMediaThumb) {
+                    queueHoverPreview(node, rowOrCard, 350);
+                } else {
+                    cancelHoverPreview();
+                }
             } else {
                 // Tree view: deliberate hover delay, positioned to the side
                 queueHoverPreview(node, rowOrCard, 350);
@@ -1935,17 +2070,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     showToast('Folder Empty', 'No media URLs in this folder to scan.', 'info');
                 }
                 return;
-            }
-
-            const previewTrigger = e.target.closest('.row-preview-trigger');
-            if (previewTrigger) {
-                e.preventDefault();
-                e.stopPropagation();
-                const url = previewTrigger.getAttribute('data-url');
-                const node = fileLookupMap.get(url);
-                if (node) {
-                    showHoverPreview(node, previewTrigger);
-                }
             }
         });
     }
@@ -2516,13 +2640,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const sizeText = sibling.size_bytes ? formatBytes(sibling.size_bytes) : extUpper;
             const thumbUrl = `/api/thumbnail?url=${encodeURIComponent(sibling.url)}&size=320`;
 
+            const isVid = ['MP4', 'WEBM', 'MOV', 'M4V', 'MKV', 'AVI', 'OGV'].includes(extUpper) || (sibling.mime_type && sibling.mime_type.startsWith('video/'));
+            const thumbMediaHtml = isVid
+                ? `<video class="lazy-video" src="${escapeHtml(sibling.url)}" preload="metadata" muted playsinline style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.style.display='none';this.nextElementSibling.style.display='block';"></video>
+                   <span style="display:none;font-size:11px;font-weight:700;color:var(--muted);">${escapeHtml(extUpper)}</span>`
+                : `<img src="${escapeHtml(thumbUrl)}" alt="${escapeHtml(sibling.filename)}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='block';">
+                   <span style="display:none;font-size:11px;font-weight:700;color:var(--muted);">${escapeHtml(extUpper)}</span>`;
+
             const card = document.createElement('div');
             card.className = `sibling-card ${isSelected ? 'selected' : ''} ${inLibrary ? 'in-library' : ''}`;
             card.dataset.url = sibling.url;
             card.innerHTML = `
                 <div class="sibling-thumb-wrap">
-                    <img src="${escapeHtml(thumbUrl)}" alt="${escapeHtml(sibling.filename)}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='block';">
-                    <span style="display:none;font-size:11px;font-weight:700;color:var(--muted);">${escapeHtml(extUpper)}</span>
+                    ${thumbMediaHtml}
                     <span class="sibling-status-pill ${inLibrary ? 'existing' : 'new'}">
                         ${inLibrary ? 'In Index' : 'New'}
                     </span>
