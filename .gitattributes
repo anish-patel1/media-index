@@ -1,0 +1,10 @@
+# Python Backend (primary detected language)
+*.py linguist-detectable=true
+
+# Browser Companion Extension (fully preserved and detectable)
+extension/** linguist-detectable=true
+
+# Web client bundle & styles (vendored so Python dominates repo stats)
+static/js/app.js linguist-vendored
+static/css/** linguist-vendored
+static/vendor/** linguist-vendored
