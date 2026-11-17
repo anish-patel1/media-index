@@ -322,15 +322,24 @@ def discover_folder_siblings():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-@app.route("/api/clusters", methods=["GET"])
+@app.route("/api/clusters", methods=["GET", "POST"])
 def get_clusters():
     """Detects and returns duplicate clusters and potential storage/bandwidth savings for the caller's library.
     Supports optional query filter ?confidence=high|medium|low.
+    Accepts client-side 'urls' dictionary via POST JSON body for stateless, ephemeral-resilient clustering,
+    falling back to server-side loaded URLs on GET.
     """
     user_id = get_user_id()
     try:
-        data = db._load()
-        _, urls = db._resolve_user_urls(data, user_id, auto_claim=False)
+        urls = None
+        if request.method == "POST" and request.is_json:
+            payload = request.get_json(silent=True) or {}
+            if isinstance(payload.get("urls"), dict):
+                urls = payload["urls"]
+
+        if urls is None:
+            data = db._load()
+            _, urls = db._resolve_user_urls(data, user_id, auto_claim=False)
 
         engine = ClusterEngine()
         dismissed_ids = db.get_dismissed_clusters(user_id=user_id)

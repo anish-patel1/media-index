@@ -40,6 +40,341 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // -------------------------------------------------------------
+    // 1B. Client-Side Persistent Local Storage Database (LocalStorageDB)
+    // Bulletproof persistence resilient against Render ephemeral dyno spin-downs
+    // -------------------------------------------------------------
+    const LocalStorageDB = {
+        STORAGE_KEY: `media_index_db_${currentUserId}`,
+        DISMISSED_KEY: `media_index_dismissed_${currentUserId}`,
+
+        load() {
+            try {
+                const raw = localStorage.getItem(this.STORAGE_KEY);
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    if (parsed && typeof parsed === 'object' && parsed.urls) {
+                        return parsed;
+                    }
+                }
+            } catch (e) {
+                console.warn('LocalStorageDB load error:', e);
+            }
+            return { urls: {} };
+        },
+
+        save(data) {
+            try {
+                if (!data || typeof data !== 'object') data = { urls: {} };
+                localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data));
+            } catch (e) {
+                console.error('LocalStorageDB save quota exceeded or error:', e);
+            }
+        },
+
+        getUrls() {
+            return this.load().urls || {};
+        },
+
+        hasUrl(url) {
+            if (!url) return false;
+            const urls = this.getUrls();
+            return Boolean(urls[url.trim()]);
+        },
+
+        addOrIncrement(entry) {
+            if (!entry || !entry.url) return;
+            const data = this.load();
+            const url = entry.url.trim();
+            const nowIso = new Date().toISOString();
+
+            if (data.urls[url]) {
+                const existing = data.urls[url];
+                existing.count = (existing.count || 1) + 1;
+                existing.last_updated = nowIso;
+                if (entry.metadata && typeof entry.metadata === 'object') {
+                    existing.metadata = { ...(existing.metadata || {}), ...entry.metadata };
+                }
+            } else {
+                data.urls[url] = {
+                    url: url,
+                    domain: entry.domain || 'unknown',
+                    path_segments: entry.path_segments || [],
+                    filename: entry.filename || 'file',
+                    extension: (entry.extension || '').toLowerCase(),
+                    count: entry.count || 1,
+                    first_added: entry.first_added || nowIso,
+                    last_updated: entry.last_updated || nowIso,
+                    metadata: entry.metadata || {}
+                };
+            }
+            this.save(data);
+        },
+
+        updateMetadata(url, metadata) {
+            if (!url || !metadata) return false;
+            const data = this.load();
+            const cleanUrl = url.trim();
+            if (data.urls[cleanUrl]) {
+                data.urls[cleanUrl].metadata = { ...(data.urls[cleanUrl].metadata || {}), ...metadata };
+                data.urls[cleanUrl].last_updated = new Date().toISOString();
+                this.save(data);
+                return true;
+            }
+            return false;
+        },
+
+        deleteUrls(urlsToDelete) {
+            if (!urlsToDelete || !urlsToDelete.length) return 0;
+            const data = this.load();
+            let count = 0;
+            urlsToDelete.forEach(u => {
+                const clean = String(u).trim();
+                if (data.urls[clean]) {
+                    delete data.urls[clean];
+                    count++;
+                }
+            });
+            if (count > 0) this.save(data);
+            return count;
+        },
+
+        clear() {
+            this.save({ urls: {} });
+        },
+
+        getDismissedClusters() {
+            try {
+                const raw = localStorage.getItem(this.DISMISSED_KEY);
+                return raw ? JSON.parse(raw) : [];
+            } catch {
+                return [];
+            }
+        },
+
+        dismissCluster(clusterId) {
+            if (!clusterId) return;
+            const list = this.getDismissedClusters();
+            if (!list.includes(clusterId)) {
+                list.push(clusterId);
+                localStorage.setItem(this.DISMISSED_KEY, JSON.stringify(list));
+            }
+        },
+
+        resetDismissedClusters() {
+            localStorage.setItem(this.DISMISSED_KEY, JSON.stringify([]));
+        },
+
+        exportData() {
+            const urls = this.getUrls();
+            return {
+                version: "2.0",
+                exported_at: new Date().toISOString(),
+                user_id: currentUserId,
+                total_urls: Object.keys(urls).length,
+                urls: urls
+            };
+        },
+
+        importData(payload) {
+            if (!payload || typeof payload !== 'object') return { imported: 0, merged: 0 };
+            const urlsToImport = payload.urls || (allEntriesAreUrls(payload) ? payload : {});
+            function allEntriesAreUrls(obj) {
+                const vals = Object.values(obj);
+                return vals.length > 0 && vals.every(v => v && typeof v === 'object' && v.url);
+            }
+
+            const data = this.load();
+            let imported = 0;
+            let merged = 0;
+            const nowIso = new Date().toISOString();
+
+            Object.entries(urlsToImport).forEach(([key, entry]) => {
+                if (!entry || typeof entry !== 'object') return;
+                const u = (entry.url || key || '').trim();
+                if (!u) return;
+
+                if (data.urls[u]) {
+                    const existing = data.urls[u];
+                    existing.count = Math.max(existing.count || 1, entry.count || 1);
+                    if (entry.last_updated && entry.last_updated > (existing.last_updated || '')) {
+                        existing.last_updated = entry.last_updated;
+                    }
+                    if (entry.metadata && typeof entry.metadata === 'object') {
+                        existing.metadata = { ...(existing.metadata || {}), ...entry.metadata };
+                    }
+                    merged++;
+                } else {
+                    data.urls[u] = {
+                        url: u,
+                        domain: entry.domain || 'unknown',
+                        path_segments: entry.path_segments || [],
+                        filename: entry.filename || 'file',
+                        extension: (entry.extension || '').toLowerCase(),
+                        count: entry.count || 1,
+                        first_added: entry.first_added || nowIso,
+                        last_updated: entry.last_updated || nowIso,
+                        metadata: entry.metadata || {}
+                    };
+                    imported++;
+                }
+            });
+
+            this.save(data);
+            return { imported, merged, total: Object.keys(data.urls).length };
+        }
+    };
+
+    // Client-side hierarchical folder tree builder from localStorage data
+    function buildTreeFromLocalEntries(urlsMap) {
+        const entries = Object.values(urlsMap || {});
+        const total_urls = entries.length;
+        let total_submissions = 0;
+        entries.forEach(e => { total_submissions += (e.count || 1); });
+        const duplicate_submissions = total_submissions - total_urls;
+
+        const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "svg", "avif", "bmp", "ico"]);
+        const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "m4v", "ogv", "avi", "mkv"]);
+        const GIF_EXTS = new Set(["gif"]);
+
+        const domainsMap = {};
+
+        entries.forEach(entry => {
+            const domain = entry.domain || "unknown";
+            const path_segments = entry.path_segments || [];
+            const filename = entry.filename || "file";
+            const url = entry.url || "";
+            const count = entry.count || 1;
+            const extension = (entry.extension || "").toLowerCase();
+
+            let media_type = "other";
+            if (GIF_EXTS.has(extension)) media_type = "gif";
+            else if (VIDEO_EXTS.has(extension)) media_type = "video";
+            else if (IMAGE_EXTS.has(extension)) media_type = "image";
+
+            const metadata = entry.metadata || {};
+            if (media_type === "other" && metadata && metadata.mime_type) {
+                const mime = String(metadata.mime_type).toLowerCase();
+                if (mime.includes("image")) media_type = "image";
+                else if (mime.includes("video")) media_type = "video";
+                else if (mime.includes("audio")) media_type = "audio";
+                else if (mime.includes("gif")) media_type = "gif";
+            }
+
+            if (!domainsMap[domain]) {
+                domainsMap[domain] = {
+                    name: domain,
+                    type: "domain",
+                    children: {}
+                };
+            }
+
+            let currentLevel = domainsMap[domain].children;
+            const accumulatedPath = [];
+            path_segments.forEach(seg => {
+                accumulatedPath.push(seg);
+                if (!currentLevel[seg]) {
+                    currentLevel[seg] = {
+                        name: seg,
+                        type: "folder",
+                        path: `/${accumulatedPath.join('/')}/`,
+                        children: {}
+                    };
+                }
+                currentLevel = currentLevel[seg].children;
+            });
+
+            const fileKey = `__file__${filename}__${url}`;
+            currentLevel[fileKey] = {
+                name: filename,
+                type: "file",
+                url: url,
+                count: count,
+                extension: extension ? extension.toUpperCase() : "FILE",
+                media_type: media_type,
+                first_added: entry.first_added,
+                last_updated: entry.last_updated,
+                metadata: metadata
+            };
+        });
+
+        function processNode(node) {
+            if (node.children) {
+                const childrenArray = Object.values(node.children).map(child => processNode(child));
+                childrenArray.sort((a, b) => {
+                    const aOrder = (a.type === 'domain' || a.type === 'folder') ? 0 : 1;
+                    const bOrder = (b.type === 'domain' || b.type === 'folder') ? 0 : 1;
+                    if (aOrder !== bOrder) return aOrder - bOrder;
+                    return (a.name || '').localeCompare(b.name || '');
+                });
+                node.children = childrenArray;
+
+                let filesCount = 0;
+                let foldersCount = 0;
+                let latestTs = null;
+                const typeCounts = { image: 0, video: 0, gif: 0, other: 0 };
+
+                childrenArray.forEach(child => {
+                    if (child.type === 'file') {
+                        filesCount++;
+                        const m = child.media_type || 'other';
+                        typeCounts[m] = (typeCounts[m] || 0) + 1;
+                        const ts = child.last_updated || child.first_added;
+                        if (ts && (!latestTs || ts > latestTs)) latestTs = ts;
+                    } else if (child.type === 'folder') {
+                        foldersCount += 1 + (child.folders_count || 0);
+                        filesCount += (child.files_count || 0);
+                        const ts = child.last_updated;
+                        if (ts && (!latestTs || ts > latestTs)) latestTs = ts;
+                        if (child.type_counts) {
+                            Object.entries(child.type_counts).forEach(([k, v]) => {
+                                typeCounts[k] = (typeCounts[k] || 0) + v;
+                            });
+                        }
+                    }
+                });
+
+                node.files_count = filesCount;
+                node.folders_count = foldersCount;
+                node.last_updated = latestTs;
+                node.type_counts = typeCounts;
+
+                if (node.type === 'domain') {
+                    node.items_count = filesCount;
+                    const domainLower = (node.name || '').toLowerCase();
+                    if (domainLower.includes('cdn')) {
+                        if (domainLower.includes('design') || domainLower.includes('studio')) {
+                            node.domain_type = 'DESIGN CDN';
+                        } else {
+                            node.domain_type = 'CONTENT CDN';
+                        }
+                        node.domain_color = 'coral';
+                    } else if ((typeCounts.video || 0) > (typeCounts.image || 0)) {
+                        node.domain_type = 'VIDEO SOURCE';
+                        node.domain_color = 'blue';
+                    } else {
+                        node.domain_type = 'IMAGE SOURCE';
+                        node.domain_color = 'violet';
+                    }
+                }
+            }
+            return node;
+        }
+
+        const tree = Object.values(domainsMap).map(dNode => processNode(dNode));
+        tree.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+        return {
+            tree: tree,
+            stats: {
+                total_urls: total_urls,
+                total_submissions: total_submissions,
+                duplicate_submissions: duplicate_submissions,
+                total_sources: Object.keys(domainsMap).length
+            }
+        };
+    }
+
+    // -------------------------------------------------------------
     // 2. DOM Elements
     // -------------------------------------------------------------
     const urlForm = document.getElementById('url-form');
@@ -878,7 +1213,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------
     async function loadClustersData(autoRender = true) {
         try {
-            const response = await authFetch('/api/clusters');
+            const localUrls = LocalStorageDB.getUrls();
+            // Use POST with client-side localStorage URLs to guarantee resilience against server dyno wipes
+            const response = await authFetch('/api/clusters', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ urls: localUrls })
+            });
             if (!response.ok) return;
             const data = await response.json();
             if (data.status === 'success') {
@@ -904,22 +1245,22 @@ document.addEventListener('DOMContentLoaded', () => {
     async function deleteUrls(urls, successToastTitle = 'Duplicates Removed') {
         if (!urls || urls.length === 0) return;
         try {
-            const response = await authFetch('/api/urls', {
+            // Delete from client-side persistent store first
+            const deletedCount = LocalStorageDB.deleteUrls(urls);
+
+            // Also notify backend to keep mirror in sync if server is online
+            authFetch('/api/urls', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ urls })
-            });
-            const data = await response.json();
-            if (response.ok && (data.status === 'success' || data.status === 'deleted')) {
-                showToast(successToastTitle, `Deleted ${data.deleted_count} duplicate variant URL${data.deleted_count !== 1 ? 's' : ''}.`, 'success');
-                await loadTreeData();
-                await loadClustersData(true);
-            } else {
-                showToast('Deletion Failed', data.message || 'Could not delete URLs.', 'error');
-            }
+            }).catch(e => console.debug('Silent server mirror delete error:', e));
+
+            showToast(successToastTitle, `Deleted ${deletedCount} duplicate variant URL${deletedCount !== 1 ? 's' : ''}.`, 'success');
+            await loadTreeData();
+            await loadClustersData(true);
         } catch (err) {
             console.error('Delete error:', err);
-            showToast('Network Error', 'Failed to communicate with server.', 'error');
+            showToast('Deletion Error', 'Failed to remove URLs.', 'error');
         }
     }
 
@@ -1645,48 +1986,71 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // -------------------------------------------------------------
-    // 6. Fetch & Refresh Tree Data
+    // 6. Fetch & Refresh Tree Data (LocalStorage-first with server fallback)
     // -------------------------------------------------------------
+    let hasAttemptedInitialSync = false;
+
     async function loadTreeData() {
         try {
-            const response = await authFetch('/api/tree');
-            if (!response.ok) throw new Error('Failed to fetch data');
+            // First check local persistent storage
+            let localUrls = LocalStorageDB.getUrls();
+            const localKeys = Object.keys(localUrls);
 
-            const data = await response.json();
-            if (data.status === 'success') {
-                rawTreeData = data.tree || [];
-                const stats = data.stats || {};
-
-                // Update Overview Stats
-                const totalUrls = stats.total_urls || 0;
-                const totalSources = stats.total_sources || rawTreeData.length || 0;
-                const duplicateSubs = stats.duplicate_submissions || 0;
-                const hasRecords = totalUrls > 0;
-
-                if (statTotalMedia) statTotalMedia.textContent = totalUrls;
-                if (statSources) statSources.textContent = totalSources;
-                if (statRepeats) statRepeats.textContent = duplicateSubs;
-                if (treeCountBadge) treeCountBadge.textContent = totalUrls;
-                if (footerCount) footerCount.textContent = `${totalUrls} item${totalUrls !== 1 ? 's' : ''}`;
-
-                // Dynamically disable or enable actions based on whether records exist
-                if (exportBtn) exportBtn.disabled = !hasRecords;
-                if (resetDbBtn) resetDbBtn.disabled = !hasRecords;
-                if (expandAllBtn) expandAllBtn.disabled = !hasRecords;
-                if (collapseAllBtn) collapseAllBtn.disabled = !hasRecords;
-                if (toggleFoldersBtn) toggleFoldersBtn.disabled = !hasRecords;
-                if (treeSearchInput) {
-                    treeSearchInput.disabled = !hasRecords;
-                    if (!hasRecords) {
-                        treeSearchInput.value = '';
-                        if (clearSearchBtn) clearSearchBtn.style.display = 'none';
+            // One-time automatic migration fallback: if localStorage is empty on initial boot,
+            // query backend database to import any existing server records into localStorage
+            if (!hasAttemptedInitialSync && localKeys.length === 0) {
+                hasAttemptedInitialSync = true;
+                try {
+                    const serverExport = await authFetch('/api/export');
+                    if (serverExport.ok) {
+                        const dump = await serverExport.json();
+                        if (dump && dump.urls && Object.keys(dump.urls).length > 0) {
+                            LocalStorageDB.importData(dump);
+                            localUrls = LocalStorageDB.getUrls();
+                            console.log('Migrated server database into persistent browser localStorage.');
+                        }
                     }
+                } catch (migrationErr) {
+                    console.debug('Initial server sync note:', migrationErr);
                 }
-
-                updateMediaTypeCounts();
-                renderActiveView();
-                loadClustersData(false);
+            } else {
+                hasAttemptedInitialSync = true;
             }
+
+            // Build hierarchical visual tree client-side from persistent localStorage
+            const localTreeResult = buildTreeFromLocalEntries(localUrls);
+            rawTreeData = localTreeResult.tree || [];
+            const stats = localTreeResult.stats || {};
+
+            // Update Overview Stats
+            const totalUrls = stats.total_urls || 0;
+            const totalSources = stats.total_sources || rawTreeData.length || 0;
+            const duplicateSubs = stats.duplicate_submissions || 0;
+            const hasRecords = totalUrls > 0;
+
+            if (statTotalMedia) statTotalMedia.textContent = totalUrls;
+            if (statSources) statSources.textContent = totalSources;
+            if (statRepeats) statRepeats.textContent = duplicateSubs;
+            if (treeCountBadge) treeCountBadge.textContent = totalUrls;
+            if (footerCount) footerCount.textContent = `${totalUrls} item${totalUrls !== 1 ? 's' : ''}`;
+
+            // Dynamically disable or enable actions based on whether records exist
+            if (exportBtn) exportBtn.disabled = !hasRecords;
+            if (resetDbBtn) resetDbBtn.disabled = !hasRecords;
+            if (expandAllBtn) expandAllBtn.disabled = !hasRecords;
+            if (collapseAllBtn) collapseAllBtn.disabled = !hasRecords;
+            if (toggleFoldersBtn) toggleFoldersBtn.disabled = !hasRecords;
+            if (treeSearchInput) {
+                treeSearchInput.disabled = !hasRecords;
+                if (!hasRecords) {
+                    treeSearchInput.value = '';
+                    if (clearSearchBtn) clearSearchBtn.style.display = 'none';
+                }
+            }
+
+            updateMediaTypeCounts();
+            renderActiveView();
+            loadClustersData(false);
         } catch (err) {
             console.error('Error loading tree data:', err);
             showToast('Sync Error', 'Could not load directory data.', 'error');
@@ -1720,6 +2084,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 urlInput.value = '';
                 if (clearUrlBtn) clearUrlBtn.style.display = 'none';
 
+                // Save immediately into persistent browser localStorage
+                LocalStorageDB.addOrIncrement(data.entry);
+
                 if (data.is_duplicate) {
                     showToast(
                         'Duplicate Caught',
@@ -1745,7 +2112,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 })
                     .then(res => res.json())
                     .then(enrichData => {
-                        if (enrichData && enrichData.status === 'success' && enrichData.db_updated) {
+                        if (enrichData && enrichData.status === 'success' && enrichData.metadata) {
+                            LocalStorageDB.updateMetadata(cleanUrl, enrichData.metadata);
                             loadTreeData();
                         }
                     })
@@ -2081,21 +2449,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------
     if (exportBtn) {
         exportBtn.addEventListener('click', async () => {
-            if (!rawTreeData || rawTreeData.length === 0) {
+            const localUrls = LocalStorageDB.getUrls();
+            const totalCount = Object.keys(localUrls).length;
+            if (totalCount === 0) {
                 showToast('No Records', 'Nothing to export. Add some URLs first.', 'info');
                 return;
             }
 
             try {
-                const response = await authFetch('/api/export');
-                if (!response.ok) throw new Error('Export failed');
-
-                const blob = await response.blob();
+                // Instant client-side download from persistent localStorage
+                const exportPayload = LocalStorageDB.exportData();
                 const now = new Date();
                 const dateStr = now.toISOString().slice(0, 10);
                 const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, '');
                 const filename = `media_index_export_${dateStr}_${timeStr}.json`;
 
+                const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: 'application/json' });
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.style.display = 'none';
@@ -2106,7 +2475,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.URL.revokeObjectURL(url);
                 a.remove();
 
-                showToast('Export Complete', `Saved as ${filename}`, 'success');
+                showToast('Export Complete', `Saved ${totalCount} records as ${filename}`, 'success');
             } catch (err) {
                 console.error('Export error:', err);
                 showToast('Export Error', 'Failed to generate backup JSON.', 'error');
@@ -2243,6 +2612,37 @@ document.addEventListener('DOMContentLoaded', () => {
             confirmImportBtn.disabled = true;
             if (confirmImportText) confirmImportText.textContent = 'Importing...';
 
+            // Fast-path client-side import for JSON files
+            if (pendingImportFile.name.toLowerCase().endsWith('.json')) {
+                try {
+                    const text = await pendingImportFile.text();
+                    const jsonPayload = JSON.parse(text);
+                    const importResult = LocalStorageDB.importData(jsonPayload);
+                    closeImportPreviewModal();
+                    showToast(
+                        'Import Successful',
+                        `Imported ${importResult.imported} URLs (${importResult.merged} merged).`,
+                        'success'
+                    );
+                    await loadTreeData();
+
+                    // Background sync mirror with server
+                    authFetch('/api/import', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(jsonPayload)
+                    }).catch(e => console.debug('Silent server mirror import note:', e));
+                } catch (jsonErr) {
+                    console.error('Client JSON import error:', jsonErr);
+                    showToast('Import Failed', 'Invalid JSON backup format.', 'error');
+                } finally {
+                    confirmImportBtn.disabled = false;
+                    if (confirmImportText) confirmImportText.textContent = 'Import All URLs';
+                }
+                return;
+            }
+
+            // CSV, XML, TXT parsing via server parser
             const formData = new FormData();
             formData.append('file', pendingImportFile);
 
@@ -2256,6 +2656,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 closeImportPreviewModal();
 
                 if (response.ok && data.status === 'success') {
+                    // Pull updated mirror from server into localStorage
+                    try {
+                        const sExport = await authFetch('/api/export');
+                        if (sExport.ok) {
+                            const exportData = await sExport.json();
+                            if (exportData && exportData.urls) {
+                                LocalStorageDB.importData(exportData);
+                            }
+                        }
+                    } catch {}
+
                     const imported = data.imported_count ?? data.imported ?? 0;
                     const merged = data.duplicate_count ?? data.merged ?? 0;
                     showToast(
@@ -2344,18 +2755,17 @@ document.addEventListener('DOMContentLoaded', () => {
         confirmResetBtn.addEventListener('click', async () => {
             closeResetModal();
             try {
-                const response = await authFetch('/api/clear', { method: 'POST' });
-                const data = await response.json();
+                // Clear persistent client-side storage
+                LocalStorageDB.clear();
 
-                if (response.ok && data.status === 'cleared') {
-                    showToast('Database Reset', 'All stored URLs have been cleared.', 'success');
-                    await loadTreeData();
-                } else {
-                    showToast('Reset Failed', data.message || 'Could not reset database.', 'error');
-                }
+                // Also notify server mirror
+                authFetch('/api/clear', { method: 'POST' }).catch(e => console.debug('Silent mirror reset note:', e));
+
+                showToast('Database Reset', 'All stored URLs have been cleared.', 'success');
+                await loadTreeData();
             } catch (err) {
                 console.error('Reset error:', err);
-                showToast('Network Error', 'Failed to reset database.', 'error');
+                showToast('Reset Error', 'Failed to reset database.', 'error');
             }
         });
     }
@@ -2744,6 +3154,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (data.status === 'success') {
                 currentDiscoveredSiblings = data.siblings || [];
+                // Re-evaluate in_library flag against local persistent store
+                currentDiscoveredSiblings.forEach(s => {
+                    s.in_library = LocalStorageDB.hasUrl(s.url);
+                });
                 if (!currentDiscoveredSiblings.length) {
                     if (discoveryEmptyState) {
                         discoveryEmptyState.style.display = 'flex';
@@ -2839,6 +3253,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (data.status === 'success') {
                 currentDiscoveredSiblings = data.siblings || [];
+                // Re-evaluate in_library flag against local persistent store
+                currentDiscoveredSiblings.forEach(s => {
+                    s.in_library = LocalStorageDB.hasUrl(s.url);
+                });
                 if (!currentDiscoveredSiblings.length) {
                     if (discoveryEmptyState) {
                         discoveryEmptyState.style.display = 'flex';
