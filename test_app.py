@@ -263,6 +263,12 @@ class TestAppRoutes(unittest.TestCase):
         res = self.client.get("/favicon.ico")
         self.assertEqual(res.status_code, 200)
 
+    def test_service_worker_endpoint(self):
+        res = self.client.get("/sw.js")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("javascript", res.headers.get("Content-Type", "").lower())
+        self.assertEqual(res.headers.get("Service-Worker-Allowed"), "/")
+
     def test_enrich_endpoint_validation(self):
         # Empty payload
         res = self.client.post("/api/enrich", json={})

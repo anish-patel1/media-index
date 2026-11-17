@@ -4,7 +4,10 @@
 # Browser Companion Extension (fully preserved and detectable)
 extension/** linguist-detectable=true
 
-# Web client bundle & styles (vendored so Python dominates repo stats)
-static/js/app.js linguist-vendored
+# Web client bundle & styles (vendored and excluded from stats)
+static/js/** linguist-vendored
+static/js/** linguist-detectable=false
 static/css/** linguist-vendored
+static/css/** linguist-detectable=false
 static/vendor/** linguist-vendored
+static/vendor/** linguist-detectable=false

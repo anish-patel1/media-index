@@ -21,6 +21,27 @@
 </head>
 
 <body>
+    <!-- Warm-Up / Loading Splash Screen -->
+    <div id="app-warmup-splash" class="app-warmup-splash" aria-hidden="false">
+        <div class="warmup-card">
+            <div class="warmup-logo-wrap">
+                <div class="warmup-glow-ring"></div>
+                <img src="{{ url_for('static', filename='favicon.png') }}" alt="media index logo" class="warmup-logo" width="84" height="84">
+            </div>
+            <div class="warmup-brand">
+                media<span>index</span>
+            </div>
+            <div class="warmup-status-wrap">
+                <div class="warmup-spinner"></div>
+                <span id="warmup-status-text" class="warmup-status-text">Connecting to Media Engine...</span>
+            </div>
+            <div class="warmup-progress-bar">
+                <div class="warmup-progress-fill"></div>
+            </div>
+            <div class="warmup-subtext">Initializing library & server connection</div>
+        </div>
+    </div>
+
     <!-- Floating Toast Notifications Container -->
     <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 

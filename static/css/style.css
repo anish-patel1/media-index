@@ -3790,3 +3790,141 @@ mark.search-highlight {
   50% { transform: scale(1.2) rotate(15deg); opacity: 1; filter: drop-shadow(0 0 4px #7c3aed); }
   100% { transform: scale(1); opacity: 0.7; }
 }
+
+/* ==========================================================================
+   App Warm-Up & Boot Splash Screen (Render Free Tier)
+   ========================================================================== */
+.app-warmup-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: var(--bg, #090b10);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  transition: opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.45s ease;
+  opacity: 1;
+  visibility: visible;
+}
+
+.app-warmup-splash.dismissed {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.warmup-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 380px;
+  width: 100%;
+}
+
+.warmup-logo-wrap {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.warmup-glow-ring {
+  position: absolute;
+  inset: -10px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(101, 88, 221, 0.4) 0%, rgba(101, 88, 221, 0) 70%);
+  animation: warmupPulse 2.4s ease-in-out infinite;
+}
+
+.warmup-logo {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 24px rgba(101, 88, 221, 0.35));
+  border-radius: 18px;
+}
+
+.warmup-brand {
+  font-family: var(--font, sans-serif);
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--ink, #ffffff);
+  margin-bottom: 4px;
+}
+
+.warmup-brand span {
+  color: var(--accent, #6558dd);
+}
+
+.warmup-status-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  margin-bottom: 14px;
+}
+
+.warmup-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(101, 88, 221, 0.25);
+  border-top-color: var(--accent, #6558dd);
+  border-radius: 50%;
+  animation: warmupSpin 0.75s linear infinite;
+}
+
+.warmup-status-text {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink, #ffffff);
+  letter-spacing: -0.01em;
+}
+
+.warmup-progress-bar {
+  width: 220px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+  margin-bottom: 12px;
+}
+
+.warmup-progress-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, var(--accent, #6558dd), #a594f9, transparent);
+  border-radius: 999px;
+  animation: warmupShimmer 1.6s ease-in-out infinite;
+}
+
+.warmup-subtext {
+  font-size: 11.5px;
+  color: var(--muted, #8b92a5);
+  font-family: var(--mono, monospace);
+  line-height: 1.4;
+}
+
+@keyframes warmupPulse {
+  0%, 100% { transform: scale(0.95); opacity: 0.5; }
+  50% { transform: scale(1.15); opacity: 0.9; }
+}
+
+@keyframes warmupSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes warmupShimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(280%); }
+}

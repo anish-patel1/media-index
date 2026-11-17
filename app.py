@@ -6,7 +6,7 @@ import os
 import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
-from flask import Flask, render_template, request, jsonify, Response, send_file, send_from_directory
+from flask import Flask, render_template, request, jsonify, Response, send_file, send_from_directory, make_response
 from database import URLDatabase
 from enricher import MetadataEnricher
 from thumbnail_manager import get_or_create_thumbnail
@@ -89,6 +89,16 @@ def privacy_policy():
 def favicon():
     """Serves the website favicon."""
     return send_from_directory(os.path.join(app.root_path, "static"), "favicon.ico", mimetype="image/x-icon")
+
+
+@app.route("/sw.js")
+def service_worker():
+    """Serves the Service Worker script from root scope for cold-start caching."""
+    response = make_response(send_from_directory(os.path.join(app.root_path, "static"), "sw.js"))
+    response.headers["Content-Type"] = "application/javascript"
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 @app.route("/api/handshake", methods=["GET"])

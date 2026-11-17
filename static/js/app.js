@@ -3461,9 +3461,77 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // -------------------------------------------------------------
+    // Boot Splash & Server Warm-Up Health Check (Render Free Tier)
+    // -------------------------------------------------------------
+    const warmupSplash = document.getElementById('app-warmup-splash');
+    const warmupStatusText = document.getElementById('warmup-status-text');
+
+    function dismissWarmupSplash() {
+        if (!warmupSplash || warmupSplash.classList.contains('dismissed')) return;
+        warmupSplash.classList.add('dismissed');
+        setTimeout(() => {
+            warmupSplash.style.display = 'none';
+        }, 500);
+    }
+
+    async function checkServerWarmupHealth() {
+        const startTime = Date.now();
+        let connected = false;
+
+        try {
+            const res = await fetch('/api/handshake', { cache: 'no-store' });
+            if (res.ok) {
+                connected = true;
+            }
+        } catch (e) {
+            connected = false;
+        }
+
+        if (connected) {
+            if (warmupStatusText) warmupStatusText.textContent = '✓ Engine Connected';
+            setTimeout(dismissWarmupSplash, 350);
+            return;
+        }
+
+        if (warmupStatusText) warmupStatusText.textContent = 'Waking up server instance...';
+
+        const pollInterval = setInterval(async () => {
+            const elapsed = Math.round((Date.now() - startTime) / 1000);
+            if (warmupStatusText) {
+                warmupStatusText.textContent = `Waking up server instance (${elapsed}s)...`;
+            }
+
+            try {
+                const res = await fetch('/api/handshake', { cache: 'no-store' });
+                if (res.ok) {
+                    clearInterval(pollInterval);
+                    if (warmupStatusText) warmupStatusText.textContent = '✓ Engine Connected';
+                    setTimeout(dismissWarmupSplash, 400);
+                }
+            } catch (err) {
+                // Keep polling while Render is spinning up
+            }
+        }, 2500);
+
+        // Fallback safety timeout: dismiss splash after 45s regardless
+        setTimeout(() => {
+            clearInterval(pollInterval);
+            dismissWarmupSplash();
+        }, 45000);
+    }
+
+    // Register Service Worker for instant app-shell caching on Render
+    if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js').catch(() => {});
+        });
+    }
+
+    // -------------------------------------------------------------
     // 12. Initial Load
     // -------------------------------------------------------------
     setFocusMode(isFocusMode, true);
     setViewMode(currentViewMode);
     loadTreeData();
+    checkServerWarmupHealth();
 });
