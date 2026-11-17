@@ -3057,6 +3057,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 : `<img src="${escapeHtml(thumbUrl)}" alt="${escapeHtml(sibling.filename)}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='block';">
                    <span style="display:none;font-size:11px;font-weight:700;color:var(--muted);">${escapeHtml(extUpper)}</span>`;
 
+            const stratMeta = (() => {
+                switch (sibling.strategy) {
+                    case 'directory_index': return { icon: '📁', label: 'Directory' };
+                    case 'date_pattern': return { icon: '📅', label: 'Date' };
+                    case 'quality_suffix': return { icon: '📏', label: 'Size' };
+                    case 'alpha_sequence': return { icon: '🔤', label: 'Alpha' };
+                    case 'convention_variant': return { icon: '🔗', label: 'Variant' };
+                    case 'numeric_sequence':
+                    default: return { icon: '🔢', label: 'Numeric' };
+                }
+            })();
+
             const card = document.createElement('div');
             card.className = `sibling-card ${isSelected ? 'selected' : ''} ${inLibrary ? 'in-library' : ''}`;
             card.dataset.url = sibling.url;
@@ -3074,6 +3086,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div class="sibling-meta-row">
                         <span>${escapeHtml(extUpper)}</span>
+                        <span class="sibling-strategy-pill" title="Discovery Strategy: ${escapeHtml(stratMeta.label)}">${stratMeta.icon} ${escapeHtml(stratMeta.label)}</span>
                         <span>${escapeHtml(sizeText)}</span>
                     </div>
                 </div>
@@ -3180,6 +3193,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     currentDiscoveredSiblings.forEach(s => selectedSiblingUrls.add(s.url));
                 }
+                if (data.strategies_run && data.strategies_run.length > 1) {
+                    if (discoveryModalSubtitle) discoveryModalSubtitle.textContent = `Found ${currentDiscoveredSiblings.length} files across ${data.strategies_run.length} discovery strategies`;
+                } else if (data.strategies_run && data.strategies_run.includes('directory_index')) {
+                    if (discoveryModalSubtitle) discoveryModalSubtitle.textContent = `📁 Full directory listing discovered — showing ${currentDiscoveredSiblings.length} media files`;
+                } else if (data.pattern_description) {
+                    if (discoveryModalSubtitle) discoveryModalSubtitle.textContent = data.pattern_description;
+                }
                 renderDiscoveredGrid(currentDiscoveredSiblings);
             } else {
                 if (discoveryEmptyState) {
@@ -3278,6 +3298,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     newItems.forEach(s => selectedSiblingUrls.add(s.url));
                 } else {
                     currentDiscoveredSiblings.forEach(s => selectedSiblingUrls.add(s.url));
+                }
+                if (data.strategies_run && data.strategies_run.length > 1) {
+                    if (discoveryModalSubtitle) discoveryModalSubtitle.textContent = `Found ${currentDiscoveredSiblings.length} files across ${data.strategies_run.length} discovery strategies`;
+                } else if (data.strategies_run && data.strategies_run.includes('directory_index')) {
+                    if (discoveryModalSubtitle) discoveryModalSubtitle.textContent = `📁 Full directory listing discovered — showing ${currentDiscoveredSiblings.length} media files`;
+                } else if (data.pattern_description) {
+                    if (discoveryModalSubtitle) discoveryModalSubtitle.textContent = data.pattern_description;
                 }
                 renderDiscoveredGrid(currentDiscoveredSiblings);
             } else {

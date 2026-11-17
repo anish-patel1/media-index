@@ -3698,6 +3698,19 @@ mark.search-highlight {
   font-family: var(--mono);
 }
 
+.sibling-strategy-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9.5px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  letter-spacing: 0.02em;
+}
+
 .tree-magic-btn {
   background: none;
   border: none;
